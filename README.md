@@ -7,22 +7,23 @@ A high-performance, **OS-agnostic** SEO and Generative Engine Optimization (GEO)
 
 ---
 
-## Why Antigravity vs Claude Code?
+## claude-seo + Claude Opus 5 vs. antigravity-seo + Gemini 3.8 Flash
 
-| Metric / Dimension | Claude Code (Claude Opus 5 + Thinking) | Antigravity (Gemini 3.8 Flash High) | Advantage |
+| Dimension / Capability | claude-seo + Claude Opus 5 | antigravity-seo + Gemini 3.8 Flash | Advantage |
 |---|---|---|---|
-| **Input Token Price** | $5.00 / 1M tokens | **$0.75 / 1M tokens** | **6.7x cheaper** |
-| **Output / Thinking Price** | $25.00 / 1M tokens | **$3.75 / 1M tokens** | **6.7x cheaper** |
+| **Input Token Cost** | $5.00 / 1M tokens | **$0.75 / 1M tokens** | **6.7x cheaper** |
+| **Output / Thinking Cost** | $25.00 / 1M tokens | **$3.75 / 1M tokens** | **6.7x cheaper** |
 | **Single Page Deep Audit** (~50k in / 10k out) | ~$0.50 | **~$0.075** | **~85% savings** |
 | **Full Site Audit (20 Pages + SERP Intel)** (~400k in / 80k out) | **~$4.00 – $8.00+** | **~$0.60** | **~85% – 90% savings** |
-| **Multi-Agent Swarms (`flash_lite` crawl)** | Not supported (single-tier pricing) | **~$0.12 – $0.20** | **~25x – 40x cheaper** |
-| **Terminal / Agent Autonomy** | Frontier reasoning baseline | **Terminal-Bench 2.1: 90.8%** | **Frontier terminal accuracy** |
-| **Live Google Search** | ❌ Paid 3rd-party MCPs (Brave, Firecrawl, Serper) | ✅ **Native `search_web`** | **Built-in live Google grounding** |
-| **Page Semantic Parsing** | ❌ Subprocess curl or browser daemons | ✅ **Native `read_url_content`** | **Zero-overhead markdown parsing** |
-| **Deliverable Medium** | ❌ Terminal text stream | ✅ **Interactive UI Artifacts** | **Mermaid diagrams & rich scorecards** |
-| **Engine Runtime** | ❌ Python venvs, pip deps, Playwright | ✅ **Static Go Binary (`seo-engine`)** | **Zero dependencies, 10ms execution** |
+| **Multi-Agent Swarm Crawling** | Not supported (single model tier) | **~$0.12 – $0.20** (via `flash_lite`) | **~25x – 40x cheaper** |
+| **Terminal & Agentic Autonomy** | Frontier reasoning baseline | **Terminal-Bench 2.1: 90.8%** | **SOTA agentic execution** |
+| **Live Google SERP Grounding** | ❌ 3rd-party paid MCPs (Brave, Firecrawl, Serper) | ✅ **Native `search_web`** | **Zero-config Google grounding** |
+| **Page Semantic Content Extraction** | ❌ Subprocess curl or browser daemons | ✅ **Native `read_url_content`** | **Zero-overhead markdown parsing** |
+| **Engine Runtime & Dependencies** | ❌ Python venvs, pip packages, Playwright | ✅ **Single static Go binary (`seo-engine`)** | **Zero dependencies, 10ms startup** |
+| **Google Search Console & Backlinks** | ❌ External paid SaaS APIs (Ahrefs/Moz) | ✅ **Native GSC JWT RSA + Common Crawl** | **Zero external subscriptions** |
+| **Deliverables & Visual Presentation** | ❌ Terminal text stream / raw markdown | ✅ **Interactive UI Artifacts & PDF / HTML** | **Rich scorecards, Mermaid, PDF** |
 
-*Pricing data based on September 2026 generally available rates. On Claude Code, running multiple site audits quickly depletes monthly session credit pools or API limits; on Antigravity, daily audits cost pennies.*
+*Pricing data based on September 2026 generally available rates. On claude-seo with Claude Opus 5, running deep site-wide audits rapidly consumes monthly session credit pools or API limits; with antigravity-seo on Gemini 3.8 Flash, daily automated audits cost pennies.*
 
 ---
 
