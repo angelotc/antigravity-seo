@@ -1,0 +1,16 @@
+{
+  "seo-schema-lint": {
+    "PostToolUse": [
+      {
+        "matcher": "write_to_file|replace_file_content",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "./hooks/schema_linter.sh",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

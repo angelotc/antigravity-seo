@@ -1,0 +1,4 @@
+# Add to ~/.codex/config.toml to use the SEO Engine in Codex
+[mcp_servers.seo]
+command = "/apps/antigravity-seo/bin/seo-engine"
+args = ["serve-mcp"]
