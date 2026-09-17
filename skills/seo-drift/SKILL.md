@@ -9,30 +9,39 @@ Detects accidental SEO regressions (e.g. accidental `noindex` deployments, broke
 
 ---
 
-## 1. Autonomous Background Monitoring via `schedule`
+## 1. Snapshot Drift Store (engine-native)
+
+The engine stores page snapshots (title, meta, canonical, H1, schema types, word count, status, TTFB, content hash) in its data directory — see `seo-engine doctor` for the OS-specific location.
+
+```bash
+seo-engine drift baseline <url>      # capture a snapshot
+seo-engine drift compare <url>       # field-level diff vs latest baseline
+seo-engine drift history <url>       # list all snapshots
+```
+
+Typical loop: baseline after every intentional deploy, compare before/after risky changes. The compare report flags any field drift — status drops, canonical changes, schema type removals, or TTFB regressions.
+
+---
+
+## 2. Autonomous Background Monitoring via `schedule`
 
 To monitor a production site continuously, set up a recurring cron task using Antigravity's native `schedule` tool:
 
 ```json
 {
   "CronExpression": "0 2 * * *",
-  "Prompt": "Run a fast SEO health check on https://nipponhomes.com key pages (home, /akiya, /tokyo). Verify: 1) status is 200, 2) canonical matches self, 3) noindex is absent, 4) schema JSON-LD is valid. Alert in conversation if any regression is detected."
+  "Prompt": "Run `seo-engine drift compare` on the key pages of https://example.com (home, /pricing, /blog); if no baseline exists, run `drift baseline` first. Alert in conversation if any regression is detected (status != 200, canonical change, noindex, schema drop)."
 }
 ```
 
-The agent will awaken each night, run `/apps/antigravity-seo/bin/seo-engine headers <url>` and report only if regressions are identified.
+The agent will awaken each night, run the drift compare and report only if regressions are identified.
 
 ---
 
-## 2. Cross-Session Baseline Tracking with Memex
+## 3. Cross-Session Baseline Tracking with Memex
 
-Before starting an audit, check if a previous audit baseline exists using Memex:
+For cross-conversation audit history beyond page snapshots, check prior audit sessions using Memex:
 
 ```bash
 memex search "<domain> SEO audit" --limit 3 --unique-session
 ```
-
-### What to Compare Against Baseline:
-* Did the Technical Score or Schema Score change?
-* Were previously resolved critical issues reintroduced in a recent code commit?
-* Did new redirect hops get added to primary navigation URLs?

@@ -44,11 +44,17 @@ type Tool struct {
 
 // StartMCPServer runs the stdio JSON-RPC server for Antigravity, Claude Code, and Codex
 func StartMCPServer(version string) error {
+	return Serve(os.Stdin, os.Stdout, version)
+}
+
+// Serve answers MCP JSON-RPC requests from r, writing responses to w.
+// Split from StartMCPServer so the protocol loop is testable.
+func Serve(r io.Reader, w io.Writer, version string) error {
 	client := crawler.NewSafeClient(crawler.ClientOptions{
 		Timeout: 20 * time.Second,
 	})
 
-	scanner := bufio.NewScanner(os.Stdin)
+	scanner := bufio.NewScanner(r)
 	// Allow large payloads (up to 10MB)
 	buf := make([]byte, 1024*1024)
 	scanner.Buffer(buf, 10*1024*1024)
@@ -114,6 +120,66 @@ func StartMCPServer(version string) error {
 				"required": []string{"url"},
 			},
 		},
+		{
+			Name:        "seo_inspect_schema",
+			Description: "Extract and validate JSON-LD structured data against Google Rich Results requirements (required properties, deprecated types, placeholders).",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"url": map[string]interface{}{
+						"type":        "string",
+						"description": "The URL of the page to validate structured data on.",
+					},
+				},
+				"required": []string{"url"},
+			},
+		},
+		{
+			Name:        "seo_audit_images",
+			Description: "Image optimization audit: alt coverage and quality, width/height (CLS risk), lazy-loading, modern formats, insecure and oversized inline images.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"url": map[string]interface{}{
+						"type":        "string",
+						"description": "The URL of the page whose images should be audited.",
+					},
+				},
+				"required": []string{"url"},
+			},
+		},
+		{
+			Name:        "seo_audit_content",
+			Description: "Content quality and E-E-A-T audit: word count, reading time, heading hierarchy, author byline and date signals, GEO answer blocks, optional keyword density.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"url": map[string]interface{}{
+						"type":        "string",
+						"description": "The URL of the page to analyze.",
+					},
+					"keyword": map[string]interface{}{
+						"type":        "string",
+						"description": "Optional target keyword for density and placement analysis.",
+					},
+				},
+				"required": []string{"url"},
+			},
+		},
+		{
+			Name:        "seo_audit_hreflang",
+			Description: "International hreflang audit: BCP47 code validation, x-default presence, self-reference, and duplicate declarations.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"url": map[string]interface{}{
+						"type":        "string",
+						"description": "The URL of the page to audit hreflang annotations on.",
+					},
+				},
+				"required": []string{"url"},
+			},
+		},
 	}
 
 	for scanner.Scan() {
@@ -124,13 +190,13 @@ func StartMCPServer(version string) error {
 
 		var req JSONRPCRequest
 		if err := json.Unmarshal(line, &req); err != nil {
-			sendError(os.Stdout, nil, -32700, "Parse error")
+			sendError(w, nil, -32700, "Parse error")
 			continue
 		}
 
 		switch req.Method {
 		case "initialize":
-			sendResponse(os.Stdout, req.ID, map[string]interface{}{
+			sendResponse(w, req.ID, map[string]interface{}{
 				"protocolVersion": "2024-11-05",
 				"serverInfo": map[string]interface{}{
 					"name":    "antigravity-seo-engine",
@@ -145,38 +211,38 @@ func StartMCPServer(version string) error {
 			// Acknowledged by client
 
 		case "ping":
-			sendResponse(os.Stdout, req.ID, map[string]interface{}{})
+			sendResponse(w, req.ID, map[string]interface{}{})
 
 		case "tools/list":
-			sendResponse(os.Stdout, req.ID, map[string]interface{}{
+			sendResponse(w, req.ID, map[string]interface{}{
 				"tools": tools,
 			})
 
 		case "tools/call":
-			handleToolCall(context.Background(), client, req.ID, req.Params)
+			handleToolCall(context.Background(), client, w, req.ID, req.Params)
 
 		default:
-			sendError(os.Stdout, req.ID, -32601, fmt.Sprintf("Method not found: %s", req.Method))
+			sendError(w, req.ID, -32601, fmt.Sprintf("Method not found: %s", req.Method))
 		}
 	}
 
 	return scanner.Err()
 }
 
-func handleToolCall(ctx context.Context, client *crawler.SafeClient, id interface{}, paramsRaw json.RawMessage) {
+func handleToolCall(ctx context.Context, client *crawler.SafeClient, w io.Writer, id interface{}, paramsRaw json.RawMessage) {
 	var params struct {
 		Name      string                 `json:"name"`
 		Arguments map[string]interface{} `json:"arguments"`
 	}
 
 	if err := json.Unmarshal(paramsRaw, &params); err != nil {
-		sendError(os.Stdout, id, -32602, "Invalid params")
+		sendError(w, id, -32602, "Invalid params")
 		return
 	}
 
 	urlStr, _ := params.Arguments["url"].(string)
 	if urlStr == "" {
-		sendError(os.Stdout, id, -32602, "Missing required argument 'url'")
+		sendError(w, id, -32602, "Missing required argument 'url'")
 		return
 	}
 
@@ -186,7 +252,7 @@ func handleToolCall(ctx context.Context, client *crawler.SafeClient, id interfac
 	case "seo_inspect_headers":
 		res, err := client.Fetch(ctx, urlStr)
 		if err != nil {
-			sendToolResultError(id, err.Error())
+			sendToolResultError(w, id, err.Error())
 			return
 		}
 		hdrAudit := audit.InspectHeaders(res)
@@ -196,7 +262,7 @@ func handleToolCall(ctx context.Context, client *crawler.SafeClient, id interfac
 	case "seo_audit_page":
 		res, err := client.Fetch(ctx, urlStr)
 		if err != nil {
-			sendToolResultError(id, err.Error())
+			sendToolResultError(w, id, err.Error())
 			return
 		}
 		hdrAudit := audit.InspectHeaders(res)
@@ -216,9 +282,12 @@ func handleToolCall(ctx context.Context, client *crawler.SafeClient, id interfac
 		if cl, ok := params.Arguments["check_limit"].(float64); ok && cl > 0 {
 			checkLimit = int(cl)
 		}
+		if checkLimit > 100 {
+			checkLimit = 100
+		}
 		report, err := client.InspectSitemap(ctx, urlStr, checkLimit)
 		if err != nil {
-			sendToolResultError(id, err.Error())
+			sendToolResultError(w, id, err.Error())
 			return
 		}
 		b, _ := json.MarshalIndent(report, "", "  ")
@@ -227,18 +296,71 @@ func handleToolCall(ctx context.Context, client *crawler.SafeClient, id interfac
 	case "seo_inspect_robots":
 		report, err := client.InspectRobots(ctx, urlStr)
 		if err != nil {
-			sendToolResultError(id, err.Error())
+			sendToolResultError(w, id, err.Error())
+			return
+		}
+		b, _ := json.MarshalIndent(report, "", "  ")
+		resultText = string(b)
+
+	case "seo_inspect_schema":
+		res, err := client.Fetch(ctx, urlStr)
+		if err != nil {
+			sendToolResultError(w, id, err.Error())
+			return
+		}
+		report := audit.InspectSchema(urlStr, res.Body)
+		b, _ := json.MarshalIndent(report, "", "  ")
+		resultText = string(b)
+
+	case "seo_audit_images":
+		res, err := client.Fetch(ctx, urlStr)
+		if err != nil {
+			sendToolResultError(w, id, err.Error())
+			return
+		}
+		report, err := audit.InspectImages(urlStr, res.Body)
+		if err != nil {
+			sendToolResultError(w, id, err.Error())
+			return
+		}
+		b, _ := json.MarshalIndent(report, "", "  ")
+		resultText = string(b)
+
+	case "seo_audit_content":
+		keyword, _ := params.Arguments["keyword"].(string)
+		res, err := client.Fetch(ctx, urlStr)
+		if err != nil {
+			sendToolResultError(w, id, err.Error())
+			return
+		}
+		report, err := audit.InspectContent(urlStr, res.Body, keyword)
+		if err != nil {
+			sendToolResultError(w, id, err.Error())
+			return
+		}
+		b, _ := json.MarshalIndent(report, "", "  ")
+		resultText = string(b)
+
+	case "seo_audit_hreflang":
+		res, err := client.Fetch(ctx, urlStr)
+		if err != nil {
+			sendToolResultError(w, id, err.Error())
+			return
+		}
+		report, err := audit.InspectHreflang(urlStr, res.Body)
+		if err != nil {
+			sendToolResultError(w, id, err.Error())
 			return
 		}
 		b, _ := json.MarshalIndent(report, "", "  ")
 		resultText = string(b)
 
 	default:
-		sendError(os.Stdout, id, -32601, fmt.Sprintf("Unknown tool: %s", params.Name))
+		sendError(w, id, -32601, fmt.Sprintf("Unknown tool: %s", params.Name))
 		return
 	}
 
-	sendResponse(os.Stdout, id, map[string]interface{}{
+	sendResponse(w, id, map[string]interface{}{
 		"content": []map[string]interface{}{
 			{
 				"type": "text",
@@ -248,8 +370,8 @@ func handleToolCall(ctx context.Context, client *crawler.SafeClient, id interfac
 	})
 }
 
-func sendToolResultError(id interface{}, errMsg string) {
-	sendResponse(os.Stdout, id, map[string]interface{}{
+func sendToolResultError(w io.Writer, id interface{}, errMsg string) {
+	sendResponse(w, id, map[string]interface{}{
 		"isError": true,
 		"content": []map[string]interface{}{
 			{

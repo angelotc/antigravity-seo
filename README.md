@@ -1,8 +1,8 @@
 # Antigravity SEO & GEO Suite
 
-A high-performance SEO and Generative Engine Optimization (GEO) suite built natively for **Google Antigravity CLI & IDE**, powered by a high-speed **Go engine** and multi-agent skills.
+A high-performance, **OS-agnostic** SEO and Generative Engine Optimization (GEO) suite built natively for **Google Antigravity CLI & IDE**, powered by a single static **Go engine** (Linux / macOS / Windows) and 21 multi-agent skills.
 
-Combines transport-level network inspection and high-concurrency crawling with Antigravity’s native AI search evaluation, live SERP exploration (`search_web`), and interactive UI Artifacts.
+Combines transport-level network inspection, high-concurrency crawling, schema quality gates, drift monitoring, and optional Google API integrations with Antigravity's native AI search evaluation (`search_web`), content reading (`read_url_content`), and interactive UI Artifacts.
 
 ---
 
@@ -10,20 +10,19 @@ Combines transport-level network inspection and high-concurrency crawling with A
 
 ```mermaid
 flowchart TD
-    subgraph Engine["Tier 1: Core Go Engine (seo-engine)"]
+    subgraph Engine["Tier 1: Core Go Engine (seo-engine — one static binary per OS)"]
         A["Safe HTTP Client (SSRF & Redirect Inspection)"]
-        B["Streaming XML Sitemap & robots.txt Parser"]
-        C["On-Page Technical & Schema.org Auditor"]
-        D["Dual Mode: CLI + stdio MCP Server"]
+        B["Sitemap Parser + Site Crawler (analyze & generate)"]
+        C["Auditors: Technical / Schema / Images / Content / Hreflang / llms.txt"]
+        D["Drift Snapshot Store + Ops (setup / doctor)"]
+        E["Optional APIs: PageSpeed / CrUX / IndexNow"]
+        F["Dual Mode: CLI + stdio MCP Server (8 tools)"]
     end
 
-    subgraph Skills["Tier 2: Antigravity Skills & Plugin Layer"]
-        E["Master Orchestrator (skills/seo)"]
-        F["Technical SEO & CWV (skills/seo-technical)"]
-        G["GEO & AI Citability (skills/seo-geo)"]
-        H["Schema.org Rich Results (skills/seo-schema)"]
-        I["E-E-A-T & Quality (skills/seo-content)"]
-        J["Continuous Drift Watchdog (skills/seo-drift)"]
+    subgraph Skills["Tier 2: 21 Skills & Plugin Layer"]
+        G["Orchestrators: seo, seo-audit, seo-page"]
+        H["Specialists: technical, content, schema, geo, images, hreflang, local, maps, ecommerce, backlinks, cluster, sxo, drift"]
+        I["Planning: plan, programmatic, competitor-pages, content-brief, flow"]
     end
 
     subgraph MultiAgent["Tier 3: Multi-Harness Ecosystem"]
@@ -38,73 +37,120 @@ flowchart TD
 
 ---
 
-## Features
+## Installation
 
-* **Zero Python Runtime Overhead**: No virtual environments, no `pip`, and no broken Playwright daemons. Single static Go binary starts in under 10ms.
-* **First-Class AI Citability (GEO)**: Designed around Google's AI Optimization Guide, evaluating content for front-loaded answers, entity salience, and `/llms.txt` presence.
-* **Live SERP & Gap Intelligence**: Leverages Antigravity's `search_web` to discover ranking competitors, People Also Ask (PAA) questions, and content gaps for free.
-* **High-Speed Sitemap Discovery**: Discovers and streams 100+ child sitemaps in under 250ms with zero memory bloat.
-* **AI Bot Policy Auditing**: Inspects access permissions for `Googlebot`, `Google-Extended`, `GPTBot`, `OAI-SearchBot`, `ClaudeBot`, `PerplexityBot`, and `Applebot-Extended`.
-* **Universal MCP Server**: Runs over `stdio` for instant integration into Claude Code, Codex, and Cursor.
-* **Autonomous Drift Monitoring**: Built-in `schedule` cron runbook for nightly regression checks.
-* **Cross-Session Memory with Memex**: Compares technical scores and schema deprecations against prior audits.
+### Quick install
+
+**macOS / Linux (bash):**
+```bash
+git clone <this-repo> antigravity-seo
+cd antigravity-seo
+bash install.sh
+```
+
+**Windows (PowerShell):**
+```powershell
+git clone <this-repo> antigravity-seo
+cd antigravity-seo
+powershell -ExecutionPolicy Bypass -File install.ps1
+```
+
+Both installers: build the engine (`go build`), install the plugin into Antigravity's plugin directory, run `seo-engine setup` (data dir + runtime state), and verify with `seo-engine doctor` (exit 0 = ready, 10 = partial). Requirements: **Go 1.22+** (or a prebuilt `bin/seo-engine[.exe]`) and git.
+
+Set `INSTALL_DIR` to override the plugin target directory (default `~/.gemini/config/plugins`).
+
+### Verify
+
+```bash
+seo-engine doctor          # runtime state, drift store, adapters, integrations, platform
+```
+
+### Uninstall
+
+```bash
+bash uninstall.sh              # macOS/Linux (add --purge to drop the data dir too)
+powershell -File uninstall.ps1 # Windows (-Purge for the data dir)
+```
+
+Uninstallers remove the plugin only — never MCP configs or credentials.
+
+### Manual / engine-only
+
+```bash
+go build -buildvcs=false -o bin/seo-engine ./cmd/seo-engine   # append .exe on Windows
+./bin/seo-engine setup && ./bin/seo-engine doctor
+mkdir -p ~/.gemini/config/plugins && ln -s "$PWD" ~/.gemini/config/plugins/antigravity-seo
+```
+
+Cross-compiling for another OS? Standard Go toolchains work:
+```bash
+GOOS=windows GOARCH=amd64 go build -o bin/seo-engine.exe ./cmd/seo-engine
+GOOS=darwin  GOARCH=arm64 go build -o bin/seo-engine ./cmd/seo-engine
+```
+
+### Data directory (per-OS defaults, override with `ANTIGRAVITY_SEO_DATA_DIR`)
+
+| OS | Location |
+|---|---|
+| Linux | `$XDG_DATA_HOME/antigravity-seo` or `~/.local/share/antigravity-seo` |
+| macOS | `~/Library/Application Support/antigravity-seo` |
+| Windows | `%LOCALAPPDATA%\antigravity-seo` |
 
 ---
 
-## Quick Start (CLI)
+## Engine Commands (18)
 
-Build the binary:
-```bash
-cd /apps/antigravity-seo
-go build -buildvcs=false -o bin/seo-engine ./cmd/seo-engine
-```
+| Command | Purpose |
+|---|---|
+| `headers <url>` | Status, redirect chains, X-Robots-Tag, header canonical, TTFB |
+| `audit <url>` | On-page technical + schema audit |
+| `page <url>` | Deep audit: audit + images + content/E-E-A-T + hreflang |
+| `schema <url>` | JSON-LD validation vs Google Rich Results (14+ types, deprecated types, placeholders) |
+| `images <url>` | Alt coverage, dimensions/CLS, formats, lazy-load, data URIs |
+| `content <url>` | Word count, heading tree, byline/date E-E-A-T, answer blocks, keyword density |
+| `hreflang <url>` | BCP47 codes, x-default, self-reference, duplicates |
+| `llms <url>` | `/llms.txt` + `/llms-full.txt` discovery audit |
+| `sitemap <url>` | Sitemap analysis: broken/redirecting URLs, limits |
+| `sitemap generate <url>` | Bounded same-origin crawl → XML sitemap (robots-aware, noindex-aware) |
+| `robots <url>` | robots.txt incl. AI-crawler policies (Allow/Disallow precedence, wildcards, crawl-delay) |
+| `drift baseline\|compare\|history <url>` | Page snapshot monitoring |
+| `psi <url>` | Google PageSpeed Insights (lab + CrUX field CWV) — needs `GOOGLE_API_KEY` |
+| `crux <url>` | Chrome UX Report p75 field data (`--history` for 25 weeks) — needs `GOOGLE_API_KEY` |
+| `indexnow <url...>` | IndexNow submission (Bing/Yandex/Seznam/Naver) — needs `INDEXNOW_KEY` (`--gen-key` bootstraps) |
+| `setup` / `doctor` | Runtime initialization / readiness check |
+| `lint-schema-file <path>` | JSON-LD quality gate (used by the PostToolUse hook) |
+| `serve-mcp` | MCP server over stdio (8 tools) |
 
-Inspect transport headers & redirect hops:
-```bash
-./bin/seo-engine headers https://nipponhomes.com
-```
+All audit commands support `--json`. Integrations degrade gracefully with setup instructions when keys are absent — the engine core is 100% keyless.
 
-Perform full on-page technical and schema audit:
-```bash
-./bin/seo-engine audit https://nipponhomes.com
-```
+## Skills (21)
 
-Stream and validate an XML sitemap:
-```bash
-./bin/seo-engine sitemap https://nipponhomes.com/sitemap-index.xml --limit 10
-```
+Orchestrators: `seo`, `seo-audit`, `seo-page`
+Specialists: `seo-technical`, `seo-content`, `seo-schema`, `seo-geo`, `seo-drift`, `seo-images`, `seo-hreflang`, `seo-local`, `seo-maps`, `seo-ecommerce`, `seo-backlinks`, `seo-cluster`, `seo-sxo`
+Planning: `seo-plan`, `seo-programmatic` (30/50 doorway gates), `seo-competitor-pages`, `seo-content-brief`, `seo-flow`
 
-Inspect robots.txt directives and AI crawler policies:
-```bash
-./bin/seo-engine robots https://nipponhomes.com
-```
+Skills reference the engine as `seo-engine`; resolve it to `<plugin-root>/bin/seo-engine` (`seo-engine.exe` on Windows) per `rules/AGENTS.md`.
 
----
+## Schema Lint Hook (PostToolUse quality gate)
 
-## Antigravity Plugin Setup
+The plugin ships a hook that lints JSON-LD on every file write — blocking placeholders (`[Business Name]`, `REPLACE_*`, `TODO`) and deprecated types (HowTo, SpecialAnnouncement, ClaimReview, VehicleListing, EstimatedSalary, LearningVideo, CourseInfo); warning on invalid JSON or missing `@context`/`@type`.
 
-To make the skills and rules globally discoverable in Antigravity:
+- **macOS/Linux:** `hooks/schema_linter.sh` (configured in `hooks.json`)
+- **Windows:** `hooks/schema_linter.ps1` — swap the `hooks.json` command to
+  `powershell -NoProfile -ExecutionPolicy Bypass -File ./hooks/schema_linter.ps1`
 
-```bash
-mkdir -p ~/.gemini/config/plugins
-ln -s /apps/antigravity-seo ~/.gemini/config/plugins/antigravity-seo
-```
-
-Once installed, simply ask Antigravity in plain English:
-* *"Audit the SEO and schema for https://nipponhomes.com"*
-* *"Check if our site is blocking AI search crawlers in robots.txt"*
-* *"Run a technical crawl on our XML sitemap"*
+Exit contract: 0 = clean (`{}` on stdout), 2 = block, findings on stderr.
 
 ---
 
 ## MCP Server Integration
 
-To use the Go engine in other AI assistants:
+The engine speaks MCP over stdio for other assistants. Replace `<ENGINE_PATH>` with your absolute engine path — see `adapters/`:
 
 ### Codex CLI (`~/.codex/config.toml`)
 ```toml
 [mcp_servers.seo]
-command = "/apps/antigravity-seo/bin/seo-engine"
+command = "<ENGINE_PATH>"
 args = ["serve-mcp"]
 ```
 
@@ -112,10 +158,53 @@ args = ["serve-mcp"]
 ```json
 {
   "mcpServers": {
-    "seo": {
-      "command": "/apps/antigravity-seo/bin/seo-engine",
-      "args": ["serve-mcp"]
-    }
+    "seo": { "command": "<ENGINE_PATH>", "args": ["serve-mcp"] }
   }
 }
 ```
+
+MCP tools: `seo_inspect_headers`, `seo_audit_page`, `seo_inspect_sitemap`, `seo_inspect_robots`, `seo_inspect_schema`, `seo_audit_images`, `seo_audit_content`, `seo_audit_hreflang`.
+
+## Optional API Integrations
+
+| Integration | Key | Enables |
+|---|---|---|
+| Google PageSpeed + CrUX | `GOOGLE_API_KEY` (free) | `psi`, `crux` — real-user CWV field data |
+| IndexNow | `INDEXNOW_KEY` (free) | `indexnow` — instant submission to Bing/Yandex/Seznam/Naver |
+
+Paid third-party backlink/keyword MCP servers (Moz, Ahrefs, DataForSEO, SE Ranking) are intentionally out of scope — see `skills/seo-backlinks` and `skills/seo-cluster` for keyless methodologies.
+
+---
+
+## Parity Matrix vs [claude-seo](https://github.com/AgriciDaniel/claude-seo)
+
+| Upstream capability | Here |
+|---|---|
+| `/seo setup` + `/seo doctor` runtime | ✅ `setup` / `doctor` (Go runtime; no Python venv) |
+| install.sh / install.ps1 / uninstallers | ✅ all four scripts |
+| technical / page / schema / sitemap / robots audits | ✅ engine commands |
+| sitemap **generate** | ✅ `sitemap generate` |
+| images / hreflang / content (E-E-A-T) / geo / llms.txt | ✅ engine commands + skills |
+| Schema PostToolUse lint hook | ✅ bash + PowerShell |
+| drift baseline/compare/history | ✅ JSON snapshots (SQLite-free) |
+| PageSpeed / CrUX / IndexNow | ✅ key-gated with graceful degradation |
+| local / maps / ecommerce / cluster / sxo / plan / programmatic / competitor-pages / content-brief / flow | ✅ skills (prompt + engine + `search_web`) |
+| FAQ/deprecated-type tracking | ✅ schema validator + lint hook |
+| Python/Playwright SPA rendering & screenshots | ❌ (engine is static-HTML; use Antigravity's browser tools) |
+| PDF report generation | ❌ (Markdown artifacts) |
+| GSC/GA4/Ads OAuth, Moz/Ahrefs/DataForSEO/SE Ranking/Profound/Firecrawl MCPs | ❌ (out of scope; keyless alternatives provided) |
+| SQLite drift DB | 🔁 JSON snapshot store (zero-dep) |
+| Common Crawl backlink graph | ❌ (methodology in `seo-backlinks`; engine integration not implemented) |
+
+## Development
+
+```bash
+go build ./... && go vet ./... && go test ./...   # all packages
+go mod tidy                                       # keep dependency graph clean
+```
+
+Single dependency: `golang.org/x/net` (HTML parsing). SSRF-guarded HTTP client (private/loopback/metadata/CGNAT ranges blocked), manual redirect-chain capture, per-OS data dirs.
+
+## License
+
+MIT — see [LICENSE](LICENSE).

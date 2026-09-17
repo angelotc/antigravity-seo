@@ -1,7 +1,8 @@
 {
+  "_comment": "Add to .cursor/mcp.json. Replace <ENGINE_PATH> with the absolute engine binary path on YOUR system: Linux/macOS ~/.gemini/config/plugins/antigravity-seo/bin/seo-engine, Windows C:\\Users\\<you>\\.gemini\\config\\plugins\\antigravity-seo\\bin\\seo-engine.exe (backslashes escaped in JSON).",
   "mcpServers": {
     "seo": {
-      "command": "/apps/antigravity-seo/bin/seo-engine",
+      "command": "<ENGINE_PATH>",
       "args": ["serve-mcp"]
     }
   }

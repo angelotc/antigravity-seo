@@ -22,9 +22,9 @@ Optimizes content for generative discovery, AI answer engines, and LLM-based sea
    * High information density scores correlate directly with citation rates in Google AI Overviews and Perplexity.
 
 4. **`llms.txt` and `llms-full.txt` Specification**:
-   * Inspect if the domain provides `https://<domain>/llms.txt`.
-   * A well-formed `/llms.txt` gives AI agents a clean, markdown-indexed map of core documentation, reducing hallucinated summaries.
+   * Audit with the engine: `seo-engine llms <url> --json` — checks existence, H1 title, section count, and markdown link coverage for both `/llms.txt` and `/llms-full.txt`.
+   * A well-formed `/llms.txt` gives AI agents a clean, markdown-indexed map of core documentation, reducing hallucinated summaries. Treat it as a discovery aid, not a citation lever.
 
 5. **AI Crawler Policies**:
-   * Check `robots.txt` using `/apps/antigravity-seo/bin/seo-engine robots <url>`.
+   * Check `robots.txt` using `seo-engine robots <url>`.
    * Note: Blocking `Google-Extended` protects proprietary training data for Gemini/Vertex without impacting Google Search indexing. Blocking `Googlebot` or `OAI-SearchBot` blocks search visibility.

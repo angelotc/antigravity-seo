@@ -1,5 +1,5 @@
 {
   "name": "antigravity-seo",
-  "version": "1.0.0",
-  "description": "Google Antigravity SEO & GEO Suite. High-speed Go engine, Gemini-aligned AI citability, Schema validation, robots/sitemap inspection, and multi-agent subagent swarms."
+  "version": "2.0.0",
+  "description": "Google Antigravity SEO & GEO Suite. OS-agnostic Go engine (Linux/macOS/Windows) with 18 CLI commands and 8 MCP tools: technical/page audits, schema validation with PostToolUse lint hook, images/content/hreflang/llms.txt analysis, sitemap analysis + generation, robots & AI-crawler policy, drift snapshots, PageSpeed/CrUX/IndexNow integrations, setup/doctor ops, and multi-agent subagent swarms."
 }

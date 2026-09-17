@@ -40,6 +40,35 @@ func TestSSRFBlockedIPs(t *testing.T) {
 	}
 }
 
+func TestAcceptLanguageHeader(t *testing.T) {
+	var gotLang, gotUA string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotLang = r.Header.Get("Accept-Language")
+		gotUA = r.Header.Get("User-Agent")
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer ts.Close()
+
+	client := NewSafeClient(ClientOptions{Timeout: 5 * time.Second, AllowPrivateIPs: true})
+	if _, err := client.Fetch(context.Background(), ts.URL); err != nil {
+		t.Fatal(err)
+	}
+	if gotLang != DefaultAcceptLanguage {
+		t.Errorf("default Accept-Language should be %q, got %q", DefaultAcceptLanguage, gotLang)
+	}
+	if gotUA != DefaultUserAgent {
+		t.Errorf("default User-Agent should be %q, got %q", DefaultUserAgent, gotUA)
+	}
+
+	client = NewSafeClient(ClientOptions{Timeout: 5 * time.Second, AllowPrivateIPs: true, AcceptLanguage: "ja,en;q=0.8"})
+	if _, err := client.Fetch(context.Background(), ts.URL); err != nil {
+		t.Fatal(err)
+	}
+	if gotLang != "ja,en;q=0.8" {
+		t.Errorf("Accept-Language override failed, got %q", gotLang)
+	}
+}
+
 func TestRedirectChainTracking(t *testing.T) {
 	// Setup a mock server that simulates 301 and 302 hops
 	var ts *httptest.Server

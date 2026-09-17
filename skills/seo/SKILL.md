@@ -18,20 +18,20 @@ Run the high-speed Go engine to verify the foundational HTTP and bot access laye
 
 1. **Header & Redirect Inspection**:
    ```bash
-   /apps/antigravity-seo/bin/seo-engine headers <URL> --json
+   seo-engine headers <URL> --json
    ```
    * Flag any non-200 status, multi-hop redirect chains, or `X-Robots-Tag: noindex`.
    * Check TTFB (warn if > 800ms).
 
 2. **Robots.txt & AI Crawler Policy**:
    ```bash
-   /apps/antigravity-seo/bin/seo-engine robots <URL> --json
+   seo-engine robots <URL> --json
    ```
    * Verify if Googlebot, Google-Extended, and AI Search bots (OAI-SearchBot, PerplexityBot, ClaudeBot) are permitted or blocked.
 
 3. **XML Sitemap Validation**:
    ```bash
-   /apps/antigravity-seo/bin/seo-engine sitemap <URL>/sitemap.xml --limit 15 --json
+   seo-engine sitemap <URL>/sitemap.xml --limit 15 --json
    ```
    * Check sitemap index structure, count, and verify sample URLs are returning 200 OK.
 
@@ -41,15 +41,22 @@ Run the high-speed Go engine to verify the foundational HTTP and bot access laye
 Run the deep DOM and structured data analyzer:
 
 ```bash
-/apps/antigravity-seo/bin/seo-engine audit <URL> --json
+seo-engine audit <URL> --json
+```
+
+For a full six-dimension deep audit (adds images, content/E-E-A-T, hreflang), use:
+
+```bash
+seo-engine page <URL> --keyword "<primary keyword>" --json
 ```
 
 Evaluate:
 * **Title & Meta Description**: Length, uniqueness, keyword placement.
 * **Canonical Consistency**: Is canonical present and self-referencing, or pointing elsewhere?
 * **Heading Structure**: Exactly one `<h1>` matching primary query intent, logical `<h2>`/`<h3>` hierarchy.
-* **Image Optimization**: Alt text coverage for all informative images.
-* **Schema (JSON-LD)**: Verify required properties for detected types (`Organization`, `Product`, `RealEstateListing`, `FAQPage`, `BreadcrumbList`).
+* **Image Optimization**: Alt coverage, dimensions/CLS, formats, lazy-loading (`images` section).
+* **Schema (JSON-LD)**: Verify required properties for detected types (`Organization`, `Product`, `RealEstateListing`, `LocalBusiness`, `Event`, `FAQPage`, `BreadcrumbList`).
+* **Content & E-E-A-T**: Word count, byline/date signals, answer blocks for AI citability (`content` section).
 
 ---
 
@@ -69,7 +76,7 @@ Leverage Antigravity's native tools:
 
 ### Phase 4: Synthesis & Deliverable
 
-Generate an interactive Markdown Artifact in the artifact directory (`/root/.gemini/antigravity-cli/brain/<conversationId>/`) featuring:
+Generate an interactive Markdown Artifact in this conversation's artifact directory featuring:
 1. **Executive Scorecard** (Technical, Schema, GEO, and Mobile scores out of 100).
 2. **Prioritized Action Items**: Categorized by severity:
    * `> [!CRITICAL]` Immediate indexing or crawl blockers (e.g. `noindex`, 404 in sitemap).

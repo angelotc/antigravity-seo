@@ -20,7 +20,11 @@ var (
 )
 
 // DefaultUserAgent used for SEO requests
-const DefaultUserAgent = "AntigravitySEO/1.0 (+https://github.com/antigravity-seo; bot)"
+const DefaultUserAgent = "AntigravitySEO/2.0 (+https://github.com/antigravity-seo; bot)"
+
+// DefaultAcceptLanguage is a locale-neutral default; override per client for
+// localized sites whose servers content-negotiate on this header
+const DefaultAcceptLanguage = "en-US,en;q=0.9"
 
 // RedirectHop records details of each hop in a redirect chain
 type RedirectHop struct {
@@ -55,6 +59,7 @@ type FetchResult struct {
 // ClientOptions configures safe network behavior
 type ClientOptions struct {
 	UserAgent       string
+	AcceptLanguage  string
 	Timeout         time.Duration
 	MaxRedirects    int
 	MaxBodyBytes    int64
@@ -71,6 +76,9 @@ type SafeClient struct {
 func NewSafeClient(opts ClientOptions) *SafeClient {
 	if opts.UserAgent == "" {
 		opts.UserAgent = DefaultUserAgent
+	}
+	if opts.AcceptLanguage == "" {
+		opts.AcceptLanguage = DefaultAcceptLanguage
 	}
 	if opts.Timeout == 0 {
 		opts.Timeout = 15 * time.Second
@@ -175,7 +183,7 @@ func (c *SafeClient) Fetch(ctx context.Context, targetURL string) (*FetchResult,
 		}
 		req.Header.Set("User-Agent", c.options.UserAgent)
 		req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
-		req.Header.Set("Accept-Language", "en-US,en;q=0.9,ja;q=0.8")
+		req.Header.Set("Accept-Language", c.options.AcceptLanguage)
 
 		var (
 			dnsStart, tcpStart, tlsStart, ttfbStart time.Time

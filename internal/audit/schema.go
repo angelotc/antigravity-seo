@@ -171,6 +171,24 @@ func extractTypesAndValidate(item map[string]interface{}, block *SchemaBlock, re
 			report.TypesFound = append(report.TypesFound, t)
 		}
 
+		// Deprecated types no longer earn Google rich results
+		if deprecatedSchemaTypes[t] {
+			block.Warnings = append(block.Warnings, fmt.Sprintf(
+				"'%s' is deprecated: Google no longer renders rich results for this type", t))
+			report.Score -= 5
+		}
+		if t == "FAQPage" {
+			block.Warnings = append(block.Warnings,
+				"FAQPage rich results are limited to authoritative government/health sites in most regions")
+		}
+
+		// Block placeholder values that would ship template text to production
+		for _, ph := range findPlaceholders(item, "") {
+			block.Errors = append(block.Errors, fmt.Sprintf(
+				"placeholder value %q left in property '%s'", truncate(ph.value, 60), ph.path))
+			report.Score -= 10
+		}
+
 		// Validate specific Google Rich Result types
 		validateRichResultType(t, item, block, report)
 	}
@@ -188,6 +206,7 @@ func validateRichResultType(schemaType string, data map[string]interface{}, bloc
 		checkRequiredField(data, "name", schemaType, block, report)
 		checkRequiredField(data, "image", schemaType, block, report)
 		checkRequiredField(data, "offers", schemaType, block, report)
+		checkOfferFields(data, block, report)
 
 	case "BreadcrumbList":
 		checkRequiredField(data, "itemListElement", schemaType, block, report)
@@ -195,9 +214,66 @@ func validateRichResultType(schemaType string, data map[string]interface{}, bloc
 	case "FAQPage":
 		checkRequiredField(data, "mainEntity", schemaType, block, report)
 
-	case "Organization", "LocalBusiness":
+	case "Organization":
 		checkRequiredField(data, "name", schemaType, block, report)
 		checkRequiredField(data, "url", schemaType, block, report)
+
+	case "LocalBusiness":
+		checkRequiredField(data, "name", schemaType, block, report)
+		checkRequiredField(data, "address", schemaType, block, report)
+		checkRequiredField(data, "telephone", schemaType, block, report)
+
+	case "Event":
+		checkRequiredField(data, "name", schemaType, block, report)
+		checkRequiredField(data, "startDate", schemaType, block, report)
+		checkRequiredField(data, "location", schemaType, block, report)
+
+	case "VideoObject":
+		checkRequiredField(data, "name", schemaType, block, report)
+		checkRequiredField(data, "thumbnailUrl", schemaType, block, report)
+		checkRequiredField(data, "uploadDate", schemaType, block, report)
+
+	case "Recipe":
+		checkRequiredField(data, "name", schemaType, block, report)
+		checkRequiredField(data, "image", schemaType, block, report)
+		checkRequiredField(data, "recipeIngredient", schemaType, block, report)
+
+	case "JobPosting":
+		checkRequiredField(data, "title", schemaType, block, report)
+		checkRequiredField(data, "datePosted", schemaType, block, report)
+		checkRequiredField(data, "hiringOrganization", schemaType, block, report)
+		checkRequiredField(data, "jobLocation", schemaType, block, report)
+
+	case "Course":
+		checkRequiredField(data, "name", schemaType, block, report)
+		checkRequiredField(data, "provider", schemaType, block, report)
+
+	case "Person":
+		checkRequiredField(data, "name", schemaType, block, report)
+
+	case "WebSite":
+		checkRequiredField(data, "name", schemaType, block, report)
+		checkRequiredField(data, "url", schemaType, block, report)
+
+	case "RealEstateListing":
+		checkRequiredField(data, "name", schemaType, block, report)
+		checkRequiredField(data, "url", schemaType, block, report)
+		checkRequiredField(data, "datePosted", schemaType, block, report)
+	}
+}
+
+// checkOfferFields validates inline Product.offers price fields
+func checkOfferFields(data map[string]interface{}, block *SchemaBlock, report *SchemaAuditReport) {
+	offers, ok := data["offers"].(map[string]interface{})
+	if !ok {
+		return
+	}
+	for _, f := range []string{"price", "priceCurrency"} {
+		if v, present := offers[f]; !present || v == nil || v == "" {
+			block.Warnings = append(block.Warnings, fmt.Sprintf(
+				"Product.offers is missing '%s'", f))
+			report.Score -= 3
+		}
 	}
 }
 
