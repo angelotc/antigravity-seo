@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"time"
@@ -39,8 +40,10 @@ type Check struct {
 
 // Integrations reports which optional API integrations have credentials
 type Integrations struct {
-	GoogleAPIKey bool `json:"google_api_key"`
-	IndexNowKey  bool `json:"indexnow_key"`
+	GoogleAPIKey bool   `json:"google_api_key"`
+	IndexNowKey  bool   `json:"indexnow_key"`
+	GSCAuth      bool   `json:"gsc_auth"`
+	PDFRenderer  string `json:"pdf_renderer,omitempty"`
 }
 
 // RuntimeState is the persisted manifest describing the installed runtime
@@ -118,11 +121,27 @@ func StatePath() string {
 	return filepath.Join(DataDir(), StateFileName)
 }
 
-// DetectIntegrations reads optional credential env vars
+// DetectIntegrations reads optional credential env vars and detects PDF engines
 func DetectIntegrations() Integrations {
+	pdf := ""
+	for _, bin := range []string{"weasyprint", "google-chrome", "chromium", "chromium-browser", "chrome", "msedge", "wkhtmltopdf"} {
+		if path, err := exec.LookPath(bin); err == nil {
+			pdf = filepath.Base(path)
+			break
+		}
+	}
+
+	hasGSC := os.Getenv("GOOGLE_APPLICATION_CREDENTIALS") != "" ||
+		os.Getenv("GSC_ACCESS_TOKEN") != "" ||
+		os.Getenv("GOOGLE_ACCESS_TOKEN") != "" ||
+		os.Getenv("GSC_CREDENTIALS_FILE") != "" ||
+		os.Getenv("GSC_CREDENTIALS_JSON") != ""
+
 	return Integrations{
 		GoogleAPIKey: os.Getenv("GOOGLE_API_KEY") != "",
 		IndexNowKey:  os.Getenv("INDEXNOW_KEY") != "",
+		GSCAuth:      hasGSC,
+		PDFRenderer:  pdf,
 	}
 }
 
@@ -267,6 +286,16 @@ func RunDoctor(engineVersion string, offline bool) *DoctorReport {
 		report.Checks = append(report.Checks, Check{"indexnow", StatusOK, "INDEXNOW_KEY set — indexnow submission enabled"})
 	} else {
 		report.Checks = append(report.Checks, Check{"indexnow", StatusInfo, "INDEXNOW_KEY not set — indexnow submission degraded (optional)"})
+	}
+	if report.Integrations.GSCAuth {
+		report.Checks = append(report.Checks, Check{"gsc_auth", StatusOK, "credentials set — gsc query/inspect commands enabled"})
+	} else {
+		report.Checks = append(report.Checks, Check{"gsc_auth", StatusInfo, "credentials not set — gsc query/inspect commands degraded (optional)"})
+	}
+	if report.Integrations.PDFRenderer != "" {
+		report.Checks = append(report.Checks, Check{"pdf_engine", StatusOK, fmt.Sprintf("%s found in PATH — native PDF exports enabled", report.Integrations.PDFRenderer)})
+	} else {
+		report.Checks = append(report.Checks, Check{"pdf_engine", StatusInfo, "no renderer in PATH (weasyprint/chromium) — HTML reports supported, PDF degraded (optional)"})
 	}
 
 	// 6. Network reachability (skippable)

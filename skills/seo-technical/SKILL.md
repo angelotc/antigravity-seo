@@ -32,3 +32,13 @@ Focuses strictly on technical infrastructure, crawlability, indexability, and si
 4. **Security & Protocol Headers**:
    * Enforce `Strict-Transport-Security: max-age=31536000; includeSubDomains`.
    * Ensure `X-Content-Type-Options: nosniff`.
+
+5. **Google Search Console First-Party Verification**:
+   * Inspect live Googlebot indexation status, crawl date, and Google-selected canonical:
+     ```bash
+     seo-engine gsc inspect <site-url> <page-url> --json
+     ```
+   * Query live search performance analytics (queries, impressions, CTR, position):
+     ```bash
+     seo-engine gsc query <site-url> --dimensions query,page --limit 25 --json
+     ```

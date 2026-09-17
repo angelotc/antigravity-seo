@@ -39,10 +39,11 @@ func TestMCPProtocolHandshake(t *testing.T) {
 		t.Error("malformed line should return -32700 parse error")
 	}
 
-	// tools/list must advertise the full toolset including the v2 additions
+	// tools/list must advertise the full toolset including v2.0+ additions
 	for _, name := range []string{
 		"seo_inspect_headers", "seo_audit_page", "seo_inspect_sitemap", "seo_inspect_robots",
 		"seo_inspect_schema", "seo_audit_images", "seo_audit_content", "seo_audit_hreflang",
+		"seo_generate_report", "seo_query_backlinks", "seo_gsc_query",
 	} {
 		if !strings.Contains(out, `"name":"`+name+`"`) {
 			t.Errorf("tools/list missing %s", name)

@@ -98,13 +98,14 @@ GOOS=darwin  GOARCH=arm64 go build -o bin/seo-engine ./cmd/seo-engine
 
 ---
 
-## Engine Commands (18)
+## Engine Commands (21)
 
 | Command | Purpose |
 |---|---|
 | `headers <url>` | Status, redirect chains, X-Robots-Tag, header canonical, TTFB |
 | `audit <url>` | On-page technical + schema audit |
 | `page <url>` | Deep audit: audit + images + content/E-E-A-T + hreflang |
+| `report <url>` | Executive audit report in standalone HTML or native PDF (`--pdf`) |
 | `schema <url>` | JSON-LD validation vs Google Rich Results (14+ types, deprecated types, placeholders) |
 | `images <url>` | Alt coverage, dimensions/CLS, formats, lazy-load, data URIs |
 | `content <url>` | Word count, heading tree, byline/date E-E-A-T, answer blocks, keyword density |
@@ -114,12 +115,14 @@ GOOS=darwin  GOARCH=arm64 go build -o bin/seo-engine ./cmd/seo-engine
 | `sitemap generate <url>` | Bounded same-origin crawl → XML sitemap (robots-aware, noindex-aware) |
 | `robots <url>` | robots.txt incl. AI-crawler policies (Allow/Disallow precedence, wildcards, crawl-delay) |
 | `drift baseline\|compare\|history <url>` | Page snapshot monitoring |
+| `backlinks <domain>` | Keyless Common Crawl CDX index query (captures, MIME breakdown, indexed pages) |
+| `gsc query\|inspect` | Google Search Console Search Analytics and URL Inspection (JWT service account or access token) |
 | `psi <url>` | Google PageSpeed Insights (lab + CrUX field CWV) — needs `GOOGLE_API_KEY` |
 | `crux <url>` | Chrome UX Report p75 field data (`--history` for 25 weeks) — needs `GOOGLE_API_KEY` |
 | `indexnow <url...>` | IndexNow submission (Bing/Yandex/Seznam/Naver) — needs `INDEXNOW_KEY` (`--gen-key` bootstraps) |
 | `setup` / `doctor` | Runtime initialization / readiness check |
 | `lint-schema-file <path>` | JSON-LD quality gate (used by the PostToolUse hook) |
-| `serve-mcp` | MCP server over stdio (8 tools) |
+| `serve-mcp` | MCP server over stdio (11 tools) |
 
 All audit commands support `--json`. Integrations degrade gracefully with setup instructions when keys are absent — the engine core is 100% keyless.
 
@@ -169,10 +172,11 @@ MCP tools: `seo_inspect_headers`, `seo_audit_page`, `seo_inspect_sitemap`, `seo_
 
 | Integration | Key | Enables |
 |---|---|---|
+| Google Search Console | `GOOGLE_APPLICATION_CREDENTIALS` or `GSC_ACCESS_TOKEN` (free) | `gsc query`, `gsc inspect` — Search Analytics & URL inspection |
 | Google PageSpeed + CrUX | `GOOGLE_API_KEY` (free) | `psi`, `crux` — real-user CWV field data |
 | IndexNow | `INDEXNOW_KEY` (free) | `indexnow` — instant submission to Bing/Yandex/Seznam/Naver |
 
-Paid third-party backlink/keyword MCP servers (Moz, Ahrefs, DataForSEO, SE Ranking) are intentionally out of scope — see `skills/seo-backlinks` and `skills/seo-cluster` for keyless methodologies.
+Paid third-party backlink/keyword MCP servers (Moz, Ahrefs, DataForSEO, SE Ranking) are intentionally out of scope — keyless Common Crawl (`seo-engine backlinks`) and SERP clustering (`skills/seo-cluster`) are built in.
 
 ---
 
@@ -188,13 +192,14 @@ Paid third-party backlink/keyword MCP servers (Moz, Ahrefs, DataForSEO, SE Ranki
 | Schema PostToolUse lint hook | ✅ bash + PowerShell |
 | drift baseline/compare/history | ✅ JSON snapshots (SQLite-free) |
 | PageSpeed / CrUX / IndexNow | ✅ key-gated with graceful degradation |
+| Google Search Console (GSC) | ✅ `gsc query` + `gsc inspect` (JWT service account or access token) |
+| PDF report generation | ✅ `seo-engine report <url> [--pdf]` (HTML + WeasyPrint / Chromium print) |
+| Common Crawl backlink graph | ✅ `seo-engine backlinks <domain>` (open CDX index query, keyless) |
 | local / maps / ecommerce / cluster / sxo / plan / programmatic / competitor-pages / content-brief / flow | ✅ skills (prompt + engine + `search_web`) |
 | FAQ/deprecated-type tracking | ✅ schema validator + lint hook |
 | Python/Playwright SPA rendering & screenshots | ❌ (engine is static-HTML; use Antigravity's browser tools) |
-| PDF report generation | ❌ (Markdown artifacts) |
-| GSC/GA4/Ads OAuth, Moz/Ahrefs/DataForSEO/SE Ranking/Profound/Firecrawl MCPs | ❌ (out of scope; keyless alternatives provided) |
+| GA4/Ads OAuth, Moz/Ahrefs/DataForSEO/SE Ranking/Profound/Firecrawl MCPs | ❌ (out of scope; keyless alternatives provided) |
 | SQLite drift DB | 🔁 JSON snapshot store (zero-dep) |
-| Common Crawl backlink graph | ❌ (methodology in `seo-backlinks`; engine integration not implemented) |
 
 ## Development
 

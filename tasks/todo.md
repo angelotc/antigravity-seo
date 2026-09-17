@@ -16,11 +16,20 @@ gap-closure work.
 - [x] Phase 8 — README rewrite w/ parity matrix + verification suite
 - [x] Phase 9 (follow-up) — OS-agnostic pass: per-OS data dirs, install.ps1/uninstall.ps1, PowerShell lint hook, de-hardcoded paths in skills/rules/adapters, flags-after-URL parsing bug fixed
 - [x] Phase 10 (follow-up) — Website-agnostic pass: neutral Accept-Language (was ja-biased, now a ClientOptions field), CLI examples de-branded, seo-schema templates rewritten multi-vertical, drift/content/technical/images examples + rules wording generalized; live-verified on go.dev
+- [x] Phase 11 — Google Search Console integration (Search Analytics query + URL Inspection, Service Account JWT & access token auth, unit tests)
+- [x] Phase 12 — HTML & PDF audit report generator (executive scorecard, print-optimized CSS, WeasyPrint / headless Chrome runner, unit tests)
+- [x] Phase 13 — Keyless Common Crawl backlink explorer (CDX index query, domain summaries, unit tests)
+- [x] Phase 14 — Skills review & alignment (verify all 21 skills, wire new commands into seo-backlinks, seo-technical, seo-audit, update doctor & README)
+- [x] Phase 15 — Verification, rebuild binary, commit & push (all tests green, live validation, attribution-free push)
 
 ## Review
 
 ### Delivered
-- Engine: 7 → 18 CLI commands; MCP: 4 → 8 tools; skills: 6 → 21; tests: 7 → 40 test funcs across 6 packages (all green).
+- Engine: 18 → 21 CLI commands (`report`, `backlinks`, `gsc` added); MCP: 8 → 11 tools; skills: 21 verified and aligned; tests: 40 → 49 test funcs across 7 packages (all green).
+- Google Search Console: native Go service account RSA/PKCS8 JWT minting + bearer exchange, zero dependencies; supports `gsc query` (Search Analytics) and `gsc inspect` (URL Inspection).
+- Executive PDF & HTML reports: standalone printable HTML report with CSS gauges and issue badges; renders directly to PDF via WeasyPrint or headless Chromium (`seo-engine report <url> --pdf`).
+- Keyless Backlinks: queries public Common Crawl CDX index graph (`seo-engine backlinks <domain>`).
+- Ops & Doctor: `doctor` detects GSC credentials and available PDF engines (`weasyprint` / `chromium`).
 - Ops parity with upstream #installation: install.sh/install.ps1, uninstall.sh/uninstall.ps1, `setup` (data dir + runtime-state.json), `doctor` (readiness + integration tiers), exit-code contract 0/10/1.
 - Schema PostToolUse hook now blocks placeholders and deprecated types (bash + PowerShell variants); was a no-op stub.
 - robots.txt parser rewritten: user-agent groups (leak fixed), Allow/Disallow longest-match precedence, `*`/`$` wildcards, Crawl-delay, per-bot effective-group attribution.

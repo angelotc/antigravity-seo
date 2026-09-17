@@ -23,6 +23,7 @@ AUDIT COMMANDS:
   headers     Inspect HTTP status, redirect chains, X-Robots-Tag, and canonical headers
   audit       On-page technical SEO & Schema.org audit (headers + technical + schema)
   page        Deep single-page audit (audit + images + content + hreflang)
+  report      Generate executive HTML or PDF audit report (weasyprint / chromium)
   schema      Extract and validate JSON-LD structured data against Google Rich Results
   images      Image optimization audit (alt coverage, dimensions/CLS, formats, lazy-load)
   content     Content quality & E-E-A-T audit (word count, headings, byline, answer blocks)
@@ -33,8 +34,10 @@ SITE COMMANDS:
   sitemap     Analyze a sitemap URL — or generate one: sitemap generate <url>
   robots      Inspect robots.txt directives and AI crawler access policies
   drift       Page-change monitoring: drift baseline|compare|history <url>
+  backlinks   Explore open Common Crawl link graph and domain captures (keyless)
 
-INTEGRATION COMMANDS (optional API keys):
+INTEGRATION COMMANDS (optional API keys / credentials):
+  gsc         Google Search Console (query search analytics, inspect URL indexation)
   psi         Google PageSpeed Insights (lab + CrUX field CWV). Needs GOOGLE_API_KEY
   crux        Chrome UX Report p75 field data (--history for 25 weeks). Needs GOOGLE_API_KEY
   indexnow    Submit URLs to IndexNow (Bing/Yandex/Seznam/Naver). Needs INDEXNOW_KEY
@@ -48,6 +51,8 @@ OPS COMMANDS:
 
 OPTIONS:
   --json      Output results in machine-readable JSON format (default: human-readable)
+  --pdf       (report) Render native PDF directly via WeasyPrint or Chromium
+  --out       (report, sitemap) Output file path
   --limit     Number of URLs to check in sitemaps (default: 10, max: 100)
   --timeout   Request timeout in seconds (default: 15)
   --offline   (doctor) skip the network reachability probe
@@ -55,8 +60,9 @@ OPTIONS:
 EXAMPLES:
   seo-engine headers https://example.com
   seo-engine page https://example.com --json
-  seo-engine sitemap generate https://example.com --max-pages 200 --out sitemap.xml
-  seo-engine drift baseline https://example.com
+  seo-engine report https://example.com --pdf --out audit.pdf
+  seo-engine backlinks example.com --limit 25
+  seo-engine gsc query sc-domain:example.com
   seo-engine doctor
   seo-engine serve-mcp
 `, Version)
@@ -91,6 +97,9 @@ func main() {
 	case "page":
 		runPageCmd(os.Args[2:])
 
+	case "report":
+		runReportCmd(os.Args[2:])
+
 	case "schema":
 		runSchemaCmd(os.Args[2:])
 
@@ -114,6 +123,12 @@ func main() {
 
 	case "drift":
 		runDriftCmd(os.Args[2:])
+
+	case "backlinks":
+		runBacklinksCmd(os.Args[2:])
+
+	case "gsc":
+		runGSCCmd(os.Args[2:])
 
 	case "psi":
 		runPSICmd(os.Args[2:])

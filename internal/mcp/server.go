@@ -7,10 +7,13 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 	"time"
 
+	"antigravity-seo/internal/api"
 	"antigravity-seo/internal/audit"
 	"antigravity-seo/internal/crawler"
+	"antigravity-seo/internal/report"
 )
 
 // JSONRPCRequest represents an incoming MCP request
@@ -180,6 +183,60 @@ func Serve(r io.Reader, w io.Writer, version string) error {
 				"required": []string{"url"},
 			},
 		},
+		{
+			Name:        "seo_generate_report",
+			Description: "Generate an executive SEO & GEO audit report data structure with scores, categorized findings, and issue breakdowns.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"url": map[string]interface{}{
+						"type":        "string",
+						"description": "The URL of the webpage to audit and report on.",
+					},
+				},
+				"required": []string{"url"},
+			},
+		},
+		{
+			Name:        "seo_query_backlinks",
+			Description: "Query open Common Crawl web graph and CDX index for domain captures, MIME distribution, and indexed pages (keyless).",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"domain": map[string]interface{}{
+						"type":        "string",
+						"description": "The domain or URL to inspect in Common Crawl (e.g. example.com).",
+					},
+					"limit": map[string]interface{}{
+						"type":        "integer",
+						"description": "Maximum number of records to return (default: 50).",
+					},
+				},
+				"required": []string{"domain"},
+			},
+		},
+		{
+			Name:        "seo_gsc_query",
+			Description: "Query Google Search Console Search Analytics for clicks, impressions, CTR, and average position.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"site_url": map[string]interface{}{
+						"type":        "string",
+						"description": "The GSC site property URL (e.g. sc-domain:example.com or https://example.com/).",
+					},
+					"dimensions": map[string]interface{}{
+						"type":        "string",
+						"description": "Comma-separated dimensions: query, page, device, country, date (default: query).",
+					},
+					"limit": map[string]interface{}{
+						"type":        "integer",
+						"description": "Maximum number of rows to return (default: 25).",
+					},
+				},
+				"required": []string{"site_url"},
+			},
+		},
 	}
 
 	for scanner.Scan() {
@@ -242,7 +299,14 @@ func handleToolCall(ctx context.Context, client *crawler.SafeClient, w io.Writer
 
 	urlStr, _ := params.Arguments["url"].(string)
 	if urlStr == "" {
-		sendError(w, id, -32602, "Missing required argument 'url'")
+		if u, ok := params.Arguments["domain"].(string); ok {
+			urlStr = u
+		} else if u, ok := params.Arguments["site_url"].(string); ok {
+			urlStr = u
+		}
+	}
+	if urlStr == "" {
+		sendError(w, id, -32602, "Missing required argument ('url', 'domain', or 'site_url')")
 		return
 	}
 
@@ -353,6 +417,54 @@ func handleToolCall(ctx context.Context, client *crawler.SafeClient, w io.Writer
 			return
 		}
 		b, _ := json.MarshalIndent(report, "", "  ")
+		resultText = string(b)
+
+	case "seo_generate_report":
+		data, err := report.BuildAuditData(ctx, client, urlStr)
+		if err != nil {
+			sendToolResultError(w, id, err.Error())
+			return
+		}
+		b, _ := json.MarshalIndent(data, "", "  ")
+		resultText = string(b)
+
+	case "seo_query_backlinks":
+		limit := 50
+		if lim, ok := params.Arguments["limit"].(float64); ok && lim > 0 {
+			limit = int(lim)
+		}
+		rep, err := api.QueryCommonCrawlBacklinks(ctx, urlStr, limit, "")
+		if err != nil {
+			sendToolResultError(w, id, err.Error())
+			return
+		}
+		b, _ := json.MarshalIndent(rep, "", "  ")
+		resultText = string(b)
+
+	case "seo_gsc_query":
+		token, err := api.ResolveGSCToken(ctx)
+		if err != nil {
+			sendToolResultError(w, id, err.Error())
+			return
+		}
+		dims := []string{"query"}
+		if dStr, ok := params.Arguments["dimensions"].(string); ok && dStr != "" {
+			dims = strings.Split(dStr, ",")
+		}
+		limit := 25
+		if lim, ok := params.Arguments["limit"].(float64); ok && lim > 0 {
+			limit = int(lim)
+		}
+		rep, err := api.QuerySearchAnalytics(ctx, token, api.GSCQueryOptions{
+			SiteURL:    urlStr,
+			Dimensions: dims,
+			RowLimit:   limit,
+		})
+		if err != nil {
+			sendToolResultError(w, id, err.Error())
+			return
+		}
+		b, _ := json.MarshalIndent(rep, "", "  ")
 		resultText = string(b)
 
 	default:

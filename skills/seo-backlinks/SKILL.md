@@ -12,10 +12,10 @@ Score each linking domain on:
 - **Placement**: in-content editorial links > author bios > footers > sitewides
 - **Follow status**: `nofollow`/`sponsored`/`ugc` pass little equity but can drive traffic and diversity
 
-## 2. Free discovery methods (no paid APIs)
+## 2. Free discovery methods (keyless & open)
+- **Engine Common Crawl query**: `seo-engine backlinks <domain> --limit 50 --json` (or via MCP `seo_query_backlinks`) queries the open Common Crawl CDX index for domain presence, crawled captures, and MIME distribution without paid subscriptions.
 - `search_web`: `"{{domain}}" -site:{{domain}}` surfaces mentions; unlinked mentions are link-building leads.
 - Competitor overlaps: for each top competitor, `search_web` for their brand mentions and guest-post footprints (`"{{competitor}}" "guest post"`).
-- Common Crawl offers free index-level data (heavy; batch processing) — document as an advanced option.
 - Internal: the engine's sitemap audit reveals internal-link equity distribution to strengthen externally-linked money pages.
 
 ## 3. Toxic link review

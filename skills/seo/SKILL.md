@@ -89,3 +89,13 @@ Generate an interactive Markdown Artifact in this conversation's artifact direct
        Home --> Hub2["City Hub"]
        Hub1 --> Item["Detail Page"]
    ```
+4. **Standalone Client Deliverable (HTML or PDF)**:
+   * When an external client deliverable is requested, generate an executive HTML or PDF report directly using the engine:
+     ```bash
+     seo-engine report <URL> --pdf --out seo-audit-report.pdf
+     ```
+   * Or inspect keyless backlink graphs and first-party search analytics:
+     ```bash
+     seo-engine backlinks <domain> --limit 50 --json
+     seo-engine gsc query sc-domain:<domain> --dimensions query,page --limit 25
+     ```

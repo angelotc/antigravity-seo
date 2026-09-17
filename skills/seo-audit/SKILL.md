@@ -33,3 +33,4 @@ Produce a scorecard artifact with:
 2. **Frequency analysis**: issues appearing on multiple pages are template bugs (fix once); single-page issues are content bugs.
 3. **Prioritized fixes**: `[CRITICAL]` indexation/crawl blockers first, `[WARNING]` performance/schema, `[TIP]` GEO/E-E-A-T.
 4. **Mermaid diagram** of the crawl hierarchy with per-node status color.
+5. **Client Deliverable**: Render printable executive audit reports with `seo-engine report <url> --pdf --out audit.pdf`.
