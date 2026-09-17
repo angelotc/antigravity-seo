@@ -9,39 +9,20 @@ A high-performance, **OS-agnostic** SEO and Generative Engine Optimization (GEO)
 
 ## Why Antigravity vs Claude Code?
 
-While Claude Code pioneered agentic coding workflows, running continuous, multi-page SEO & GEO audits exposes significant cost, latency, and capability bottlenecks. Antigravity paired with Gemini 3.8 Flash delivers a step-function upgrade in economic efficiency and native tooling:
-
-### 1. Cost Per Task & Economic Comparison
-
-SEO audits are uniquely token-intensive: analyzing a single site typically involves crawling sitemaps, fetching 10–50 pages, validating JSON-LD, evaluating heading outlines, and checking search SERPs.
-
-| Metric | Claude Code (Claude Opus 5 + Thinking) | Antigravity (Gemini 3.8 Flash High) | Advantage |
+| Metric / Dimension | Claude Code (Claude Opus 5 + Thinking) | Antigravity (Gemini 3.8 Flash High) | Advantage |
 |---|---|---|---|
 | **Input Token Price** | $5.00 / 1M tokens | **$0.75 / 1M tokens** | **6.7x cheaper** |
 | **Output / Thinking Price** | $25.00 / 1M tokens | **$3.75 / 1M tokens** | **6.7x cheaper** |
 | **Single Page Deep Audit** (~50k in / 10k out) | ~$0.50 | **~$0.075** | **~85% savings** |
 | **Full Site Audit (20 Pages + SERP Intel)** (~400k in / 80k out) | **~$4.00 – $8.00+** | **~$0.60** | **~85% – 90% savings** |
-| **Multi-Agent Swarm (with flash_lite workers)** | Not supported (single-tier pricing) | **~$0.12 – $0.20** | **~25x – 40x cheaper** |
+| **Multi-Agent Swarms (`flash_lite` crawl)** | Not supported (single-tier pricing) | **~$0.12 – $0.20** | **~25x – 40x cheaper** |
+| **Terminal / Agent Autonomy** | Frontier reasoning baseline | **Terminal-Bench 2.1: 90.8%** | **Frontier terminal accuracy** |
+| **Live Google Search** | ❌ Paid 3rd-party MCPs (Brave, Firecrawl, Serper) | ✅ **Native `search_web`** | **Built-in live Google grounding** |
+| **Page Semantic Parsing** | ❌ Subprocess curl or browser daemons | ✅ **Native `read_url_content`** | **Zero-overhead markdown parsing** |
+| **Deliverable Medium** | ❌ Terminal text stream | ✅ **Interactive UI Artifacts** | **Mermaid diagrams & rich scorecards** |
+| **Engine Runtime** | ❌ Python venvs, pip deps, Playwright | ✅ **Static Go Binary (`seo-engine`)** | **Zero dependencies, 10ms execution** |
 
 *Pricing data based on September 2026 generally available rates. On Claude Code, running multiple site audits quickly depletes monthly session credit pools or API limits; on Antigravity, daily audits cost pennies.*
-
-### 2. Benchmark Evals: Speed & Terminal Autonomy
-
-Gemini 3.8 Flash was designed specifically for high-velocity agentic loops and terminal execution:
-
-*   **Terminal-Bench 2.1**: Scored **90.8%** on agentic terminal execution, demonstrating frontier capability on CLI command generation and diagnostic troubleshooting.
-*   **DeepSWE v1.1 & HLE-Verified (54.9%)**: Delivers frontier coding parity for long-horizon autonomous tasks.
-*   **Sub-Second Latency**: Real-time token streaming eliminates the long reasoning pauses of frontier heavyweights, keeping audit turnarounds fast.
-
-### 3. Native Agent Primitives vs External MCP Overhead
-
-| Capability | Claude Code | Antigravity Suite |
-|---|---|---|
-| **Live Google Search** | ❌ Requires paid 3rd-party MCPs (Brave, Firecrawl, Serper) | ✅ **Native `search_web`**: Real-time Google Search grounding built-in with zero API keys or rate limits. |
-| **Page Semantic Parsing** | ❌ Uses external curl or headless browser daemons | ✅ **Native `read_url_content`**: High-speed markdown conversion without subprocess overhead. |
-| **Deliverable Format** | ❌ Terminal text stream | ✅ **Interactive UI Artifacts**: Real-time Mermaid diagrams, executive scorecards, and GitHub callout banners in the auxiliary window. |
-| **Engine Runtime** | ❌ Python venvs, pip dependencies, Playwright | ✅ **Single Static Go Binary**: Zero dependencies, 10ms execution, cross-platform. |
-| **Swarm Architecture** | ❌ Monolithic agent loop | ✅ **Multi-Agent Tiering**: Fan out with `flash_lite` subagents for fast crawling, reserving reasoning models for synthesis. |
 
 ---
 
