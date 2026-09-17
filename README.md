@@ -39,25 +39,43 @@ flowchart TD
 
 ## Installation
 
-### Quick install
+### One-Line Install (Recommended — No clone required)
 
-**macOS / Linux (bash):**
+Installs the plugin directly into `~/.gemini/config/plugins/antigravity-seo`, compiles or downloads the engine binary, and validates with `doctor`:
+
+**macOS / Linux:**
 ```bash
-git clone <this-repo> antigravity-seo
+curl -fsSL https://raw.githubusercontent.com/angelotc/antigravity-seo/main/install.sh | bash
+```
+
+**Windows (PowerShell):**
+```powershell
+irm https://raw.githubusercontent.com/angelotc/antigravity-seo/main/install.ps1 | iex
+```
+
+*Requirements*: **Go 1.22+** (or prebuilt binary automatically downloaded from GitHub Releases) and `git` / `curl`.
+
+---
+
+### Install from Source (For Contributors)
+
+If you are modifying the engine or skills locally:
+
+**macOS / Linux:**
+```bash
+git clone https://github.com/angelotc/antigravity-seo.git
 cd antigravity-seo
 bash install.sh
 ```
 
 **Windows (PowerShell):**
 ```powershell
-git clone <this-repo> antigravity-seo
+git clone https://github.com/angelotc/antigravity-seo.git
 cd antigravity-seo
 powershell -ExecutionPolicy Bypass -File install.ps1
 ```
 
-Both installers: build the engine (`go build`), install the plugin into Antigravity's plugin directory, run `seo-engine setup` (data dir + runtime state), and verify with `seo-engine doctor` (exit 0 = ready, 10 = partial). Requirements: **Go 1.22+** (or a prebuilt `bin/seo-engine[.exe]`) and git.
-
-Set `INSTALL_DIR` to override the plugin target directory (default `~/.gemini/config/plugins`).
+Set `INSTALL_DIR` to override the plugin target directory (default `~/.gemini/config/plugins`). Set `BIN_DIR` to customize CLI binary symlink location (default `~/.local/bin`).
 
 ### Verify
 

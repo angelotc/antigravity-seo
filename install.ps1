@@ -1,12 +1,15 @@
 # antigravity-seo installer (Windows PowerShell)
 #
-# Mirrors install.sh on Windows:
-#   1. builds the Go engine (bin\seo-engine.exe)
-#   2. copies the plugin into Antigravity's plugin directory
-#   3. runs `seo-engine setup` and verifies readiness with `seo-engine doctor`
+# Supports two installation modes:
+#   1. Remote one-line install (no clone required):
+#      irm https://raw.githubusercontent.com/angelotc/antigravity-seo/main/install.ps1 | iex
+#   2. Local clone install (development):
+#      powershell -ExecutionPolicy Bypass -File install.ps1
 #
-# Usage:
-#   powershell -ExecutionPolicy Bypass -File install.ps1
+# Operational contract:
+#   1. Copies or clones plugin into ~/.gemini/config/plugins/antigravity-seo
+#   2. Builds or downloads the Go engine (bin\seo-engine.exe)
+#   3. Runs `seo-engine setup` and verifies readiness with `seo-engine doctor`
 #
 # Overrides:
 #   $env:INSTALL_DIR  plugin target directory (default: ~\.gemini\config\plugins)
@@ -15,10 +18,11 @@
 
 $ErrorActionPreference = "Stop"
 
+$RepoUrl = "https://github.com/angelotc/antigravity-seo.git"
+$ZipUrl = "https://github.com/angelotc/antigravity-seo/archive/refs/heads/main.zip"
 $InstallDir = if ($env:INSTALL_DIR) { $env:INSTALL_DIR } else { Join-Path $env:USERPROFILE ".gemini\config\plugins" }
 $PluginName = "antigravity-seo"
-$SrcDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-$Engine = Join-Path $SrcDir "bin\seo-engine.exe"
+$Target = Join-Path $InstallDir $PluginName
 
 function Write-Info($msg) { Write-Host "==> $msg" -ForegroundColor Green }
 function Write-Warn($msg) { Write-Host "WARN: $msg" -ForegroundColor Yellow }
@@ -26,12 +30,62 @@ function Die($msg) { Write-Host "ERROR: $msg" -ForegroundColor Red; exit 1 }
 
 Write-Info "antigravity-seo installer"
 
+# ---------------------------------------------------- detect local vs remote mode
+$SrcDir = $null
+if ($MyInvocation.MyCommand.Path) {
+    $PotentialDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+    if ((Test-Path (Join-Path $PotentialDir "plugin.json")) -and (Test-Path (Join-Path $PotentialDir "cmd\seo-engine"))) {
+        $SrcDir = $PotentialDir
+    }
+}
+
+New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
+
+if ($SrcDir) {
+    Write-Info "Running from local repository checkout: $SrcDir"
+    if ($Target -ne $SrcDir) {
+        if (Test-Path $Target) {
+            Write-Warn "replacing existing install at $Target"
+            Remove-Item -Recurse -Force $Target
+        }
+        Copy-Item -Recurse $SrcDir $Target
+    }
+    $WorkingDir = $SrcDir
+} else {
+    Write-Info "Remote installation mode: deploying into $Target"
+    $git = Get-Command git -ErrorAction SilentlyContinue
+    if ($git) {
+        if (Test-Path (Join-Path $Target ".git")) {
+            Write-Info "Existing git repository found at $Target - pulling latest"
+            Push-Location $Target
+            try { git pull --ff-only } finally { Pop-Location }
+        } elseif (Test-Path $Target) {
+            Write-Info "Directory $Target already exists"
+        } else {
+            Write-Info "Cloning repository from $RepoUrl"
+            git clone --depth=1 $RepoUrl $Target
+        }
+    } else {
+        if (-not (Test-Path $Target)) {
+            Write-Info "Git not found - downloading release zip archive"
+            $tempZip = Join-Path $env:TEMP "antigravity-seo-main.zip"
+            Invoke-WebRequest -Uri $ZipUrl -OutFile $tempZip
+            Expand-Archive -Path $tempZip -DestinationPath $env:TEMP -Force
+            Move-Item (Join-Path $env:TEMP "antigravity-seo-main") $Target
+            Remove-Item $tempZip -Force
+        }
+    }
+    $WorkingDir = $Target
+}
+
+$Engine = Join-Path $WorkingDir "bin\seo-engine.exe"
+New-Item -ItemType Directory -Force -Path (Join-Path $WorkingDir "bin") | Out-Null
+
 # ---------------------------------------------------------------- build engine
-# Reject Windows Store python-style stubs for go if present but unusable
 $go = Get-Command go -ErrorAction SilentlyContinue
 if ($go) {
     Write-Info "Building seo-engine with $(go version)"
-    Push-Location $SrcDir
+    Push-Location $WorkingDir
     try {
         go build -buildvcs=false -o bin/seo-engine.exe ./cmd/seo-engine
         if ($LASTEXITCODE -ne 0) { Die "engine build failed" }
@@ -39,22 +93,17 @@ if ($go) {
         Pop-Location
     }
 } elseif (Test-Path $Engine) {
-    Write-Warn "Go toolchain not found - keeping existing prebuilt engine at bin\seo-engine.exe"
-    Write-Warn "Install Go 1.22+ (https://go.dev/dl/) to rebuild from source"
+    Write-Warn "Go toolchain not found - keeping existing prebuilt engine at $Engine"
 } else {
-    Die "Go toolchain not found and no prebuilt engine at bin\seo-engine.exe. Install Go 1.22+ and re-run."
+    $ReleaseUrl = "https://github.com/angelotc/antigravity-seo/releases/latest/download/seo-engine-windows-amd64.exe"
+    Write-Info "Go not found; attempting to download prebuilt binary..."
+    try {
+        Invoke-WebRequest -Uri $ReleaseUrl -OutFile $Engine
+        Write-Info "Successfully downloaded prebuilt engine to $Engine"
+    } catch {
+        Die "Go toolchain not found and no prebuilt binary available. Install Go 1.22+ from https://go.dev/dl/ and re-run."
+    }
 }
-
-# ------------------------------------------------------------ install plugin
-Write-Info "Installing plugin into $InstallDir"
-New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
-$target = Join-Path $InstallDir $PluginName
-if (Test-Path $target) {
-    Write-Warn "replacing existing install at $target"
-    Remove-Item -Recurse -Force $target
-}
-# Copy instead of symlink: directory symlinks need admin/dev-mode on Windows
-Copy-Item -Recurse $SrcDir $target
 
 # -------------------------------------------------------------- setup + verify
 Write-Info "Initializing runtime (data dir + state manifest)"
@@ -71,11 +120,19 @@ switch ($doctorStatus) {
 }
 
 Write-Host ""
-Write-Host "Installed."
-Write-Host "Next steps:"
+Write-Host "======================================================="
+Write-Host "  Antigravity SEO Suite Installed Successfully!"
+Write-Host "======================================================="
+Write-Host ""
+Write-Host "Usage with Antigravity:"
 Write-Host "  * Restart Antigravity so the plugin is discovered, then ask:"
 Write-Host "      `"Audit the SEO for https://example.com`""
-Write-Host "  * CLI:        $Engine page https://example.com"
-Write-Host "  * MCP config: see $SrcDir\adapters\ for Codex and Cursor snippets"
-Write-Host "  * Hook (Windows): use hooks\schema_linter.ps1 in hooks.json"
-Write-Host "  * Uninstall:  powershell -File $SrcDir\uninstall.ps1"
+Write-Host "      `"Generate an executive SEO report for https://example.com`""
+Write-Host ""
+Write-Host "Direct CLI Usage:"
+Write-Host "  * $Engine doctor"
+Write-Host "  * $Engine report https://example.com --pdf"
+Write-Host "  * $Engine backlinks example.com --limit 25"
+Write-Host ""
+Write-Host "Uninstall:"
+Write-Host "  * powershell -File $(Join-Path $WorkingDir 'uninstall.ps1')"

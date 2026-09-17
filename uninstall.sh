@@ -23,6 +23,12 @@ else
     echo "Plugin not installed at $target — nothing to do"
 fi
 
+BIN_DIR="${BIN_DIR:-$HOME/.local/bin}"
+if [ -L "$BIN_DIR/seo-engine" ]; then
+    rm "$BIN_DIR/seo-engine"
+    echo "Removed CLI binary symlink: $BIN_DIR/seo-engine"
+fi
+
 if [ "${1:-}" = "--purge" ]; then
     if [ -d "$DATA_DIR" ]; then
         rm -rf "$DATA_DIR"
