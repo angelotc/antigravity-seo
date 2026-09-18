@@ -20,7 +20,6 @@ A high-performance, **OS-agnostic** SEO and Generative Engine Optimization (GEO)
 | **Page Semantic Content Extraction** | ❌ Subprocess curl or browser daemons | ✅ **Native `read_url_content`** | **Zero-overhead markdown parsing** |
 | **Engine Runtime & Dependencies** | ❌ Python venvs, pip packages, Playwright | ✅ **Single static Go binary (`seo-engine`)** | **Zero dependencies, 10ms startup** |
 | **Google Search Console & Backlinks** | ❌ External paid SaaS APIs (Ahrefs/Moz) | ✅ **Native GSC JWT RSA + Common Crawl** | **Zero external subscriptions** |
-| **Deliverables & Visual Presentation** | ❌ Terminal text stream / raw markdown | ✅ **Interactive UI Artifacts & PDF / HTML** | **Rich scorecards, Mermaid, PDF** |
 
 *Pricing data based on September 2026 generally available rates. On claude-seo with Claude Opus 5, running deep site-wide audits rapidly consumes monthly session credit pools or API limits; with antigravity-seo on Gemini 3.8 Flash, daily automated audits cost pennies.*
 
@@ -43,10 +42,6 @@ A high-performance, **OS-agnostic** SEO and Generative Engine Optimization (GEO)
 #### 4. Native Google Search Console (JWT RSA) & Public Backlinks
 - **Enterprise GSC Integration**: `seo-engine` includes a zero-dependency Google Service Account client (`internal/api/gsc.go`). It mints RS256/PKCS8 JWTs and exchanges them for OAuth2 bearer tokens directly, unlocking Search Analytics (`seo-engine gsc query`) and URL Inspection (`seo-engine gsc inspect`) without client secrets or web redirects.
 - **Keyless Backlink Graphing**: Rather than mandating paid Ahrefs or Moz subscriptions, `seo-engine backlinks` queries the public Common Crawl CDX index to extract referring domains and backlink anchor distributions at zero cost.
-
-#### 5. Executive Deliverables: Live UI Artifacts & PDF Generation
-- **Beyond Terminal Dumps**: `claude-seo` streams raw text to stdout. Antigravity SEO delivers full executive reports as rich, interactive Antigravity UI Artifacts featuring GitHub alert callouts (`> [!CRITICAL]`, `> [!WARNING]`), tabular audit breakdowns, and Mermaid site hierarchy diagrams.
-- **Print-Ready PDF Reports**: Using `seo-engine report <domain>`, the engine synthesizes audit data into a standalone, CSS-styled HTML report with visual score gauge meters and generates production-ready PDFs via `weasyprint` or headless Chrome for client distribution.
 
 ---
 

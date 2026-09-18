@@ -16,7 +16,7 @@ import (
 func runReportCmd(args []string) {
 	fs := flag.NewFlagSet("report", flag.ExitOnError)
 	asJSON := fs.Bool("json", false, "Output JSON summary instead of HTML/PDF")
-	asPDF := fs.Bool("pdf", false, "Render report directly to PDF (requires weasyprint or chromium)")
+	asPDF := fs.Bool("pdf", false, "Render report directly to PDF (pure Go native A4 engine)")
 	outFile := fs.String("out", "", "Output file path (default: report-<host>-<date>.[html|pdf])")
 	timeoutSec := fs.Int("timeout", 30, "Timeout in seconds")
 	positional := parseFlags(fs, args)
@@ -60,7 +60,7 @@ func runReportCmd(args []string) {
 			targetPath = fmt.Sprintf("seo-report-%s-%s.pdf", hostClean, nowStr)
 		}
 
-		renderer, err := report.ExportPDF(context.Background(), htmlContent, targetPath)
+		review, err := report.RenderNativePDF(data, targetPath)
 		if err != nil {
 			// Fallback: save HTML so the user doesn't lose the report
 			htmlFallback := strings.TrimSuffix(targetPath, filepath.Ext(targetPath)) + ".html"
@@ -73,7 +73,8 @@ func runReportCmd(args []string) {
 		fmt.Printf("Overall Score: %d/100 (Tech: %d, Schema: %d, Content: %d, Media: %d)\n",
 			data.Scores.Overall, data.Scores.Technical, data.Scores.Schema, data.Scores.Content, data.Scores.Media)
 		fmt.Printf("Issues:        %d total findings\n", len(data.Issues))
-		fmt.Printf("Engine:        %s (%s)\n", renderer.Type, renderer.Command)
+		fmt.Printf("Engine:        Pure Go A4 PDF (github.com/go-pdf/fpdf)\n")
+		fmt.Printf("Quality Check: %s (Size: %d KB)\n", review.Status, review.SizeBytes/1024)
 		fmt.Printf("PDF Saved:     %s\n\n", targetPath)
 		return
 	}
@@ -93,9 +94,5 @@ func runReportCmd(args []string) {
 		data.Scores.Overall, data.Scores.Technical, data.Scores.Schema, data.Scores.Content, data.Scores.Media)
 	fmt.Printf("Issues:        %d total findings\n", len(data.Issues))
 	fmt.Printf("HTML Saved:    %s\n", targetPath)
-	if report.DetectPDFRenderer() != nil {
-		fmt.Printf("Tip: Run with `--pdf` to render a native PDF.\n\n")
-	} else {
-		fmt.Printf("Tip: Open the file in a browser and choose Print -> Save as PDF, or install weasyprint.\n\n")
-	}
+	fmt.Printf("Tip: Run with `--pdf` to render a native PDF.\n\n")
 }

@@ -123,3 +123,53 @@ func TestExportPDF(t *testing.T) {
 		t.Fatalf("expected non-empty PDF file at %s", outPDF)
 	}
 }
+
+func TestRenderNativePDF(t *testing.T) {
+	client := crawler.NewSafeClient(crawler.ClientOptions{
+		Timeout:         5 * time.Second,
+		AllowPrivateIPs: true,
+	})
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		_, _ = w.Write([]byte(sampleHTML))
+	}))
+	defer ts.Close()
+
+	data, err := BuildAuditData(context.Background(), client, ts.URL)
+	if err != nil {
+		t.Fatalf("BuildAuditData failed: %v", err)
+	}
+
+	tmpDir := t.TempDir()
+	outPDF := filepath.Join(tmpDir, "native_audit_report.pdf")
+
+	review, err := RenderNativePDF(data, outPDF)
+	if err != nil {
+		t.Fatalf("RenderNativePDF failed: %v", err)
+	}
+	if review.Status != "PASS" {
+		t.Errorf("expected review status PASS, got %s", review.Status)
+	}
+	if review.SizeBytes < 2048 {
+		t.Errorf("expected PDF size >= 2KB, got %d", review.SizeBytes)
+	}
+
+	stat, err := os.Stat(outPDF)
+	if err != nil || stat.Size() == 0 {
+		t.Fatalf("expected non-empty PDF file at %s", outPDF)
+	}
+
+	// Verify bytes generator
+	pdfBytes, err := RenderNativePDFBytes(data)
+	if err != nil {
+		t.Fatalf("RenderNativePDFBytes failed: %v", err)
+	}
+	if len(pdfBytes) < 2048 {
+		t.Fatalf("expected PDF bytes >= 2KB, got %d", len(pdfBytes))
+	}
+	// PDF magic header
+	if !strings.HasPrefix(string(pdfBytes[:5]), "%PDF-") {
+		t.Errorf("expected %%PDF- magic header, got %s", string(pdfBytes[:5]))
+	}
+}
+
