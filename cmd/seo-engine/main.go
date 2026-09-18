@@ -10,7 +10,7 @@ import (
 	"antigravity-seo/internal/mcp"
 )
 
-const Version = "2.0.0"
+const Version = "2.1.0"
 
 func printUsage() {
 	fmt.Printf(`Antigravity SEO Engine v%s
@@ -23,7 +23,7 @@ AUDIT COMMANDS:
   headers     Inspect HTTP status, redirect chains, X-Robots-Tag, and canonical headers
   audit       On-page technical SEO & Schema.org audit (headers + technical + schema)
   page        Deep single-page audit (audit + images + content + hreflang)
-  report      Generate executive HTML or PDF audit report (weasyprint / chromium)
+  report      Generate executive HTML or native A4 PDF audit report (--pdf)
   schema      Extract and validate JSON-LD structured data against Google Rich Results
   images      Image optimization audit (alt coverage, dimensions/CLS, formats, lazy-load)
   content     Content quality & E-E-A-T audit (word count, headings, byline, answer blocks)
