@@ -16,7 +16,7 @@ A high-performance, **OS-agnostic** SEO and Generative Engine Optimization (GEO)
 | **Single Page Deep Audit** (~50k in / 10k out) | ~$0.50 | **~$0.075** | **~85% savings** |
 | **Full Site Audit (20 Pages + SERP Intel)** (~400k in / 80k out) | **~$4.00 – $8.00+** | **~$0.60** | **~85% – 90% savings** |
 | **Multi-Agent Swarm Crawling** | Not supported (single model tier) | **~$0.12 – $0.20** (via `flash_lite`) | **~25x – 40x cheaper** |
-| **Live Google SERP Grounding** | ❌ 3rd-party paid MCPs (Brave, Firecrawl, Serper) | ✅ **Native `search_web`** | **Zero-config Google grounding** |
+| **Live SERP & Crawl Data** | Optional paid SaaS MCPs (DataForSEO, Firecrawl, Ahrefs) | ✅ **Native `search_web` & Common Crawl** | **Zero paid subscriptions required** |
 | **Page Semantic Content Extraction** | ❌ Subprocess curl or browser daemons | ✅ **Native `read_url_content`** | **Zero-overhead markdown parsing** |
 | **Engine Runtime & Dependencies** | ❌ Python venvs, pip packages, Playwright | ✅ **Single static Go binary (`seo-engine`)** | **Zero dependencies, 10ms startup** |
 | **Google Search Console & Backlinks** | ❌ External paid SaaS APIs (Ahrefs/Moz) | ✅ **Native GSC JWT RSA + Common Crawl** | **Zero external subscriptions** |
@@ -36,8 +36,7 @@ A high-performance, **OS-agnostic** SEO and Generative Engine Optimization (GEO)
 - **Native Browser Primitives**: When full single-page application (SPA) rendering or visual screenshotting is required, Antigravity delegates directly to Antigravity's native browser subsystem—completely eliminating the need to maintain a headless browser daemon in the CLI engine.
 
 #### 3. Native Search Grounding vs. Third-Party Paid MCP Sprawl
-- **Zero-Config Google Grounding**: Traditional agent SEO toolsets require users to sign up, configure, and pay for third-party search APIs (Brave Search, Serper, Firecrawl, or DataForSEO) just to inspect competitive SERPs and People Also Ask (PAA) queries.
-- **Built-in Grounding**: Antigravity provides native `search_web` (direct live Google search results) and `read_url_content` (high-speed markdown conversion without browser overhead). You get real-time SERP rankings, intent clustering, and competitor page analysis right out of the box with zero subscription keys.
+- **Zero-Config Google Grounding**: While `claude-seo` relies on optional paid third-party MCP extensions (DataForSEO, Firecrawl, Ahrefs, SE Ranking, Profound) for live Google SERP positions, large-scale site crawling, and backlink graphs, Antigravity SEO provides native `search_web` (live Google search grounding) and `read_url_content` (high-speed markdown conversion without browser overhead) right out of the box with zero external subscriptions.
 
 #### 4. Native Google Search Console (JWT RSA) & Public Backlinks
 - **Enterprise GSC Integration**: `seo-engine` includes a zero-dependency Google Service Account client (`internal/api/gsc.go`). It mints RS256/PKCS8 JWTs and exchanges them for OAuth2 bearer tokens directly, unlocking Search Analytics (`seo-engine gsc query`) and URL Inspection (`seo-engine gsc inspect`) without client secrets or web redirects.
