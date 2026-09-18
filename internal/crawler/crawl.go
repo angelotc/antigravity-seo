@@ -90,7 +90,10 @@ func (c *SafeClient) CrawlSite(ctx context.Context, startURL string, maxPages in
 		queue = nil
 
 		for _, job := range batch {
-			if report.Visited >= maxPages {
+			mu.Lock()
+			done := report.Visited >= maxPages
+			mu.Unlock()
+			if done {
 				break
 			}
 			wg.Add(1)

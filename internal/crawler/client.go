@@ -131,6 +131,9 @@ func NewSafeClient(opts ClientOptions) *SafeClient {
 		httpClient: &http.Client{
 			Transport: transport,
 			Timeout:   opts.Timeout,
+			CheckRedirect: func(req *http.Request, via []*http.Request) error {
+				return http.ErrUseLastResponse
+			},
 		},
 		options: opts,
 	}
@@ -220,10 +223,6 @@ func (c *SafeClient) Fetch(ctx context.Context, targetURL string) (*FetchResult,
 		ttfbStart = overallStart
 		req = req.WithContext(httptrace.WithClientTrace(req.Context(), trace))
 
-		// Disable automatic redirect following on the transport client for manual inspection
-		c.httpClient.CheckRedirect = func(req *http.Request, via []*http.Request) error {
-			return http.ErrUseLastResponse
-		}
 
 		resp, err := c.httpClient.Do(req)
 		if err != nil {
