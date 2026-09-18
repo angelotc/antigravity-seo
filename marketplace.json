@@ -1,0 +1,49 @@
+{
+  "name": "antigravity-seo",
+  "displayName": "Antigravity SEO & GEO Suite",
+  "version": "2.1.0",
+  "description": "Complete SEO and Generative Engine Optimization (GEO) suite powered by Go. 21 skills, zero-dependency Go engine, native Google search grounding, and automated JSON-LD schema linting.",
+  "author": {
+    "name": "angelotc",
+    "url": "https://github.com/angelotc"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/angelotc/antigravity-seo.git"
+  },
+  "homepage": "https://github.com/angelotc/antigravity-seo#readme",
+  "license": "MIT",
+  "keywords": [
+    "antigravity",
+    "seo",
+    "geo",
+    "generative-engine-optimization",
+    "schema",
+    "json-ld",
+    "technical-seo",
+    "web-audit",
+    "google-search-console",
+    "common-crawl",
+    "pdf-reports"
+  ],
+  "categories": [
+    "Developer Tools",
+    "Web & Performance",
+    "SEO & Analytics",
+    "Productivity"
+  ],
+  "compatibility": {
+    "antigravity": ">=1.0.0",
+    "platforms": ["linux", "darwin", "windows"]
+  },
+  "components": {
+    "skills": 21,
+    "hooks": 1,
+    "mcpServers": 1,
+    "engineBinary": "bin/seo-engine"
+  },
+  "install": {
+    "global": "curl -fsSL https://raw.githubusercontent.com/angelotc/antigravity-seo/main/install.sh | bash",
+    "workspace": "git clone https://github.com/angelotc/antigravity-seo.git .agents/plugins/antigravity-seo"
+  }
+}
