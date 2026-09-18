@@ -154,10 +154,25 @@ func runLintSchemaFileCmd(args []string) {
 
 // extractHookFilePath finds the file path inside a PostToolUse payload
 func extractHookFilePath(toolInput, toolResponse map[string]interface{}) string {
+	candidates := []string{
+		"TargetFile", "target_file", "targetFile", "file_path", "filePath",
+		"AbsolutePath", "absolutePath", "path", "filename", "file",
+	}
 	for _, source := range []map[string]interface{}{toolInput, toolResponse} {
-		for _, key := range []string{"file_path", "filePath", "path", "filename", "absolute_path"} {
+		if source == nil {
+			continue
+		}
+		for _, key := range candidates {
 			if v, ok := source[key].(string); ok && v != "" {
 				return v
+			}
+		}
+		for k, v := range source {
+			lower := strings.ToLower(k)
+			if lower == "targetfile" || lower == "target_file" || lower == "filepath" || lower == "file_path" || lower == "absolutepath" || lower == "absolute_path" {
+				if s, ok := v.(string); ok && s != "" {
+					return s
+				}
 			}
 		}
 	}
