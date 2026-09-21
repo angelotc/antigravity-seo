@@ -21,11 +21,18 @@ gap-closure work.
 - [x] Phase 13 — Keyless Common Crawl backlink explorer (CDX index query, domain summaries, unit tests)
 - [x] Phase 14 — Skills review & alignment (verify all 21 skills, wire new commands into seo-backlinks, seo-technical, seo-audit, update doctor & README)
 - [x] Phase 15 — Verification, rebuild binary, commit & push (all tests green, live validation, attribution-free push)
+- [x] Phase 16 — Pure Shell / CLI Conversion: remove serve-mcp & internal/mcp, clean adapters & runtime doctor, update skills & docs, rebuild & verify
+- [ ] Phase 17 — Deslop & Authenticity Engine (Go heuristics in internal/audit/deslop.go, seo-engine deslop CLI, seo-deslop skill + references)
+- [ ] Phase 18 — Persistent Project Memory (internal/context/store.go, seo-engine context CLI, seo-project-setup skill)
+- [ ] Phase 19 — Specialized Workflows (seo-coach, seo-link-prospecting, seo-competitive-landscape skills)
+- [ ] Phase 20 — GA4 & DataForSEO integration (internal/api/ga4.go with Google JWT, internal/api/dataforseo.go, CLI commands)
+- [ ] Phase 21 — Verification suite and attribution-free release
 
 ## Review
 
 ### Delivered
-- Engine: 18 → 21 CLI commands (`report`, `backlinks`, `gsc` added); MCP: 8 → 11 tools; skills: 21 verified and aligned; tests: 40 → 49 test funcs across 7 packages (all green).
+- Pure Shell / CLI Conversion: Removed `serve-mcp` and `internal/mcp` package entirely; removed `adapters/` (Codex/Cursor MCP configs); simplified `seo-engine doctor` to verify native shell execution mode; updated skills and documentation to rely 100% on CLI shell execution.
+- Engine: 18 → 21 CLI commands (`report`, `backlinks`, `gsc` added); skills: 21 verified and aligned; tests: 46 test funcs across 7 packages (all green).
 - Google Search Console: native Go service account RSA/PKCS8 JWT minting + bearer exchange, zero dependencies; supports `gsc query` (Search Analytics) and `gsc inspect` (URL Inspection).
 - Executive PDF & HTML reports: standalone printable HTML report with CSS gauges and issue badges; renders directly to PDF via WeasyPrint or headless Chromium (`seo-engine report <url> --pdf`).
 - Keyless Backlinks: queries public Common Crawl CDX index graph (`seo-engine backlinks <domain>`).

@@ -25,6 +25,3 @@ seo-engine page <url> [--keyword "target phrase"] --json
 - **page_score** (avg of four sub-scores) below 70 → fix before content work.
 - Answer blocks = 0 → restructure the intro as a direct 40–80 word answer.
 - Schema errors are shipping blockers; warnings are ranking opportunities.
-
-## MCP alternative
-Other assistants can call the `seo_audit_page` tool via `serve-mcp` (headers+technical+schema) or compose `seo_audit_images` / `seo_audit_content` / `seo_audit_hreflang`.

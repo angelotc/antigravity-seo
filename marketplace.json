@@ -39,7 +39,6 @@
   "components": {
     "skills": 21,
     "hooks": 1,
-    "mcpServers": 1,
     "engineBinary": "bin/seo-engine"
   },
   "install": {

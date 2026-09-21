@@ -159,21 +159,6 @@ func PluginRoot() string {
 	return cwd
 }
 
-// discoverAdapters lists adapter configs present under <pluginRoot>/adapters
-func discoverAdapters(pluginRoot string) []string {
-	adapters := []string{}
-	entries, err := os.ReadDir(filepath.Join(pluginRoot, "adapters"))
-	if err != nil {
-		return adapters
-	}
-	for _, e := range entries {
-		if e.IsDir() {
-			adapters = append(adapters, e.Name())
-		}
-	}
-	return adapters
-}
-
 // RunSetup creates the data directory, drift store, and runtime-state manifest.
 func RunSetup(engineVersion, pluginRoot string) (*SetupReport, error) {
 	report := &SetupReport{
@@ -188,12 +173,6 @@ func RunSetup(engineVersion, pluginRoot string) (*SetupReport, error) {
 		return nil, fmt.Errorf("failed creating data dir %s: %w", report.DataDir, err)
 	}
 	report.StatePath = StatePath()
-
-	report.Adapters = discoverAdapters(pluginRoot)
-	if len(report.Adapters) == 0 {
-		report.Warnings = append(report.Warnings,
-			fmt.Sprintf("no adapter configs found under %s/adapters (MCP integration for Codex/Cursor unavailable)", pluginRoot))
-	}
 
 	state := RuntimeState{
 		RuntimeSchema: RuntimeSchemaVersion,
@@ -266,15 +245,8 @@ func RunDoctor(engineVersion string, offline bool) *DoctorReport {
 		report.Checks = append(report.Checks, Check{"drift_store", StatusWarn, "not initialized (drift snapshots unavailable until setup)"})
 	}
 
-	// 4. Adapters
-	pluginRoot := PluginRoot()
-	if adapters := discoverAdapters(pluginRoot); len(adapters) > 0 {
-		report.Checks = append(report.Checks, Check{"adapters", StatusOK,
-			fmt.Sprintf("%s (MCP configs under %s/adapters)", joinStrings(adapters, ", "), pluginRoot)})
-	} else {
-		report.Checks = append(report.Checks, Check{"adapters", StatusWarn,
-			fmt.Sprintf("none found under %s/adapters", pluginRoot)})
-	}
+	// 4. Execution Mode
+	report.Checks = append(report.Checks, Check{"execution_mode", StatusOK, "shell (pure CLI native)"})
 
 	// 5. Optional integrations
 	if report.Integrations.GoogleAPIKey {
@@ -327,15 +299,4 @@ func probeNetwork() error {
 	}
 	defer resp.Body.Close()
 	return nil
-}
-
-func joinStrings(items []string, sep string) string {
-	out := ""
-	for i, s := range items {
-		if i > 0 {
-			out += sep
-		}
-		out += s
-	}
-	return out
 }

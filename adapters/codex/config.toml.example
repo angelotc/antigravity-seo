@@ -1,8 +1,0 @@
-# Add to ~/.codex/config.toml to use the SEO Engine in Codex.
-#
-# Replace <ENGINE_PATH> with the absolute path to the engine binary on YOUR system:
-#   Linux/macOS: /home/<you>/.gemini/config/plugins/antigravity-seo/bin/seo-engine
-#   Windows:     C:\Users\<you>\.gemini\config\plugins\antigravity-seo\bin\seo-engine.exe
-[mcp_servers.seo]
-command = "<ENGINE_PATH>"
-args = ["serve-mcp"]

@@ -2,9 +2,8 @@
 # antigravity-seo uninstaller
 #
 # Removes the plugin symlink/directory from the Antigravity plugin directory.
-# Does NOT touch MCP configs or credentials (same contract as upstream
-# uninstallers). Pass --purge to also delete the engine data directory
-# (drift snapshots and runtime state).
+# Does NOT touch user credentials. Pass --purge to also delete the engine
+# data directory (drift snapshots and runtime state).
 
 set -euo pipefail
 

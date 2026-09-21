@@ -1,7 +1,7 @@
 # antigravity-seo uninstaller (Windows PowerShell)
 #
 # Removes the plugin copy from the Antigravity plugin directory.
-# Does NOT touch MCP configs or credentials. Pass -Purge to also delete
+# Does NOT touch user credentials. Pass -Purge to also delete
 # the engine data directory (drift snapshots and runtime state).
 
 param([switch]$Purge)

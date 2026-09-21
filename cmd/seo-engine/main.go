@@ -6,15 +6,13 @@ import (
 	"fmt"
 	"os"
 	"strings"
-
-	"antigravity-seo/internal/mcp"
 )
 
 const Version = "2.1.0"
 
 func printUsage() {
 	fmt.Printf(`Antigravity SEO Engine v%s
-High-speed, zero-dependency SEO & GEO audit engine and MCP server.
+High-speed, zero-dependency SEO & GEO audit engine.
 
 USAGE:
   seo-engine <command> [options] <url>
@@ -46,7 +44,6 @@ OPS COMMANDS:
   setup       Create the data dir and runtime-state manifest
   doctor      Readiness check (runtime state, drift store, integrations, network)
   lint-schema-file  JSON-LD quality gate for a file (used by the PostToolUse hook)
-  serve-mcp   Launch the Model Context Protocol (MCP) server over stdio
   version     Print version information
 
 OPTIONS:
@@ -64,7 +61,6 @@ EXAMPLES:
   seo-engine backlinks example.com --limit 25
   seo-engine gsc query sc-domain:example.com
   seo-engine doctor
-  seo-engine serve-mcp
 `, Version)
 }
 
@@ -79,13 +75,6 @@ func main() {
 	switch command {
 	case "version", "-v", "--version":
 		fmt.Printf("seo-engine version %s\n", Version)
-		return
-
-	case "serve-mcp":
-		if err := mcp.StartMCPServer(Version); err != nil {
-			fmt.Fprintf(os.Stderr, "MCP server error: %v\n", err)
-			os.Exit(1)
-		}
 		return
 
 	case "headers":

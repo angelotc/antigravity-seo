@@ -94,7 +94,6 @@ seo-engine doctor
 | `gsc query\|inspect` | Google Search Console Search Analytics and URL Inspection |
 | `psi <url>` / `crux <url>` | PageSpeed Insights and Chrome UX Report field data |
 | `indexnow <url...>` | Instant submission to Bing, Yandex, Seznam, and Naver |
-| `serve-mcp` | Run as an MCP server over stdio (11 tools) |
 
 All commands support `--json`. Core audit features are 100% keyless.
 
@@ -111,25 +110,19 @@ The plugin also includes a **PostToolUse schema hook** that automatically valida
 
 ---
 
-## MCP Server Integration
+## Universal Shell / CLI Integration
 
-To use `seo-engine` with other editors or harnesses (Codex, Cursor, Claude Code):
+The engine and skills run 100% natively via standard shell execution (`seo-engine <command> [options] <url> --json`) with zero MCP middleware. Simply ensure `seo-engine` is in your `$PATH` (or run `install.sh`).
 
-**Codex CLI (`~/.codex/config.toml`):**
-```toml
-[mcp_servers.seo]
-command = "seo-engine"
-args = ["serve-mcp"]
-```
-
-**Cursor (`.cursor/mcp.json`):**
-```json
-{
-  "mcpServers": {
-    "seo": { "command": "seo-engine", "args": ["serve-mcp"] }
+- **Antigravity**: Native execution via `run_command`
+- **OpenCode**: Register skills path in `opencode.json`:
+  ```json
+  "skills": {
+    "paths": ["~/.gemini/config/plugins/antigravity-seo/skills"]
   }
-}
-```
+  ```
+- **Claude Code**: Symlink or copy skills into `~/.claude/skills/`
+- **Codex / Cursor / Aider**: Invoke `seo-engine` directly via the terminal / bash tool
 
 ---
 
