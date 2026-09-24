@@ -91,8 +91,8 @@ func runLintSchemaFileCmd(args []string) {
 			fatal("cannot read hook payload: %v", readErr)
 		}
 		var hook struct {
-			ToolName string `json:"tool_name"`
-			ToolInput map[string]interface{} `json:"tool_input"`
+			ToolName     string                 `json:"tool_name"`
+			ToolInput    map[string]interface{} `json:"tool_input"`
 			ToolResponse map[string]interface{} `json:"tool_response"`
 		}
 		if err := json.Unmarshal(payload, &hook); err != nil {

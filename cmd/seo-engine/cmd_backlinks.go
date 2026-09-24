@@ -17,7 +17,7 @@ func runBacklinksCmd(args []string) {
 	positional := parseFlags(fs, args)
 
 	if len(positional) < 1 {
-		fatal("domain or URL argument required\n  Usage: seo-engine backlinks <domain> [--limit 50] [--json]")
+		fatal("domain or URL argument required\n  Usage: seo-engine backlinks <domain> [--limit 50] [--json]\n  Note: returns Common Crawl's capture index for this domain (archived URLs on this domain) — not inbound links from other sites.")
 	}
 	targetDomain := positional[0]
 
@@ -31,7 +31,8 @@ func runBacklinksCmd(args []string) {
 		return
 	}
 
-	fmt.Printf("\n=== COMMON CRAWL GRAPH & CAPTURES: %s ===\n", report.Domain)
+	fmt.Printf("\n=== COMMON CRAWL CAPTURE INDEX: %s ===\n", report.Domain)
+	fmt.Println("(archived URLs on this domain — not inbound links from other sites)")
 	fmt.Printf("Crawl Archive: %s\n", report.CrawlIndex)
 	fmt.Printf("Total Records: %d (Unique URLs: %d)\n", report.TotalFound, report.UniqueURLs)
 

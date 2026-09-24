@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"time"
@@ -38,7 +37,9 @@ type Check struct {
 	Detail string      `json:"detail,omitempty"`
 }
 
-// Integrations reports which optional API integrations have credentials
+// Integrations reports which optional API integrations have credentials.
+// PDFRenderer describes the PDF export engine; it is always the built-in
+// pure-Go renderer (github.com/go-pdf/fpdf) — no external binary is needed.
 type Integrations struct {
 	GoogleAPIKey bool   `json:"google_api_key"`
 	IndexNowKey  bool   `json:"indexnow_key"`
@@ -58,12 +59,12 @@ type RuntimeState struct {
 
 // SetupReport summarizes what setup did
 type SetupReport struct {
-	DataDir      string     `json:"data_dir"`
-	StatePath    string     `json:"state_path"`
-	DriftDir     string     `json:"drift_dir"`
-	Adapters     []string   `json:"adapters"`
+	DataDir      string       `json:"data_dir"`
+	StatePath    string       `json:"state_path"`
+	DriftDir     string       `json:"drift_dir"`
+	Adapters     []string     `json:"adapters"`
 	Integrations Integrations `json:"integrations"`
-	Warnings     []string   `json:"warnings,omitempty"`
+	Warnings     []string     `json:"warnings,omitempty"`
 }
 
 // DoctorReport is the full readiness assessment
@@ -79,9 +80,10 @@ type DoctorReport struct {
 
 // DataDir resolves the persistent data directory:
 // ANTIGRAVITY_SEO_DATA_DIR > OS-specific default:
-//   Linux/other: XDG_DATA_HOME/antigravity-seo or ~/.local/share/antigravity-seo
-//   macOS:       ~/Library/Application Support/antigravity-seo
-//   Windows:     %LOCALAPPDATA%\antigravity-seo
+//
+//	Linux/other: XDG_DATA_HOME/antigravity-seo or ~/.local/share/antigravity-seo
+//	macOS:       ~/Library/Application Support/antigravity-seo
+//	Windows:     %LOCALAPPDATA%\antigravity-seo
 func DataDir() string {
 	if d := os.Getenv("ANTIGRAVITY_SEO_DATA_DIR"); d != "" {
 		return d
@@ -121,16 +123,9 @@ func StatePath() string {
 	return filepath.Join(DataDir(), StateFileName)
 }
 
-// DetectIntegrations reads optional credential env vars and detects PDF engines
+// DetectIntegrations reads optional credential env vars. PDF export runs on
+// the built-in pure-Go engine, so it needs no PATH detection and is always on.
 func DetectIntegrations() Integrations {
-	pdf := ""
-	for _, bin := range []string{"weasyprint", "google-chrome", "chromium", "chromium-browser", "chrome", "msedge", "wkhtmltopdf"} {
-		if path, err := exec.LookPath(bin); err == nil {
-			pdf = filepath.Base(path)
-			break
-		}
-	}
-
 	hasGSC := os.Getenv("GOOGLE_APPLICATION_CREDENTIALS") != "" ||
 		os.Getenv("GSC_ACCESS_TOKEN") != "" ||
 		os.Getenv("GOOGLE_ACCESS_TOKEN") != "" ||
@@ -141,7 +136,7 @@ func DetectIntegrations() Integrations {
 		GoogleAPIKey: os.Getenv("GOOGLE_API_KEY") != "",
 		IndexNowKey:  os.Getenv("INDEXNOW_KEY") != "",
 		GSCAuth:      hasGSC,
-		PDFRenderer:  pdf,
+		PDFRenderer:  "native (pure Go)",
 	}
 }
 
@@ -264,11 +259,7 @@ func RunDoctor(engineVersion string, offline bool) *DoctorReport {
 	} else {
 		report.Checks = append(report.Checks, Check{"gsc_auth", StatusInfo, "credentials not set — gsc query/inspect commands degraded (optional)"})
 	}
-	if report.Integrations.PDFRenderer != "" {
-		report.Checks = append(report.Checks, Check{"pdf_engine", StatusOK, fmt.Sprintf("%s found in PATH — native PDF exports enabled", report.Integrations.PDFRenderer)})
-	} else {
-		report.Checks = append(report.Checks, Check{"pdf_engine", StatusInfo, "no renderer in PATH (weasyprint/chromium) — HTML reports supported, PDF degraded (optional)"})
-	}
+	report.Checks = append(report.Checks, Check{"pdf_engine", StatusOK, fmt.Sprintf("%s — PDF exports always enabled, no external binary required", report.Integrations.PDFRenderer)})
 
 	// 6. Network reachability (skippable)
 	if offline {

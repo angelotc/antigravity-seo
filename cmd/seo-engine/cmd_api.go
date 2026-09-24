@@ -105,12 +105,28 @@ func runCruxCmd(args []string) {
 	if len(report.History) > 0 {
 		fmt.Println("\n25-week history (p75 per week, most recent last):")
 		for _, series := range report.History {
-			if len(series) > 0 {
-				fmt.Printf("  %s ... %s\n", series[0], series[len(series)-1])
+			if len(series.P75s) > 0 {
+				fmt.Printf("  %-6s %s ... %s\n", series.Metric, series.P75s[0], series.P75s[len(series.P75s)-1])
 			}
+		}
+		if len(report.CollectionPeriods) > 0 {
+			first := report.CollectionPeriods[0]
+			last := report.CollectionPeriods[len(report.CollectionPeriods)-1]
+			fmt.Printf("  Coverage: %04d-%02d-%02d ... %04d-%02d-%02d\n",
+				first.FirstDate.Year, first.FirstDate.Month, first.FirstDate.Day,
+				last.LastDate.Year, last.LastDate.Month, last.LastDate.Day)
 		}
 	}
 	fmt.Println()
+}
+
+// redactKey hides a secret in --json output, keeping only a short prefix so
+// it can still be visually correlated without leaking the full value.
+func redactKey(k string) string {
+	if len(k) <= 4 {
+		return strings.Repeat("*", len(k))
+	}
+	return k[:4] + "…"
 }
 
 func runIndexNowCmd(args []string) {
@@ -155,7 +171,9 @@ func runIndexNowCmd(args []string) {
 	}
 
 	if *asJSON {
-		outputJSON(report)
+		display := *report
+		display.Key = redactKey(display.Key)
+		outputJSON(&display)
 		return
 	}
 

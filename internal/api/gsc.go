@@ -372,7 +372,7 @@ func InspectURL(ctx context.Context, token string, opts GSCInspectOptions) (*GSC
 
 	var apiResp struct {
 		InspectionResult struct {
-			Verdict          string `json:"verdict"`
+			Verdict           string `json:"verdict"`
 			IndexStatusResult struct {
 				Verdict         string   `json:"verdict"`
 				CoverageState   string   `json:"coverageState"`

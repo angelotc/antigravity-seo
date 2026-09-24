@@ -11,8 +11,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"net/url"
+	"sort"
 	"time"
 )
 
@@ -21,19 +23,19 @@ var ErrNoAPIKey = errors.New("API key not configured")
 
 // Endpoints are package vars so tests can redirect them to local servers
 var (
-	PSIEndpoint       = "https://www.googleapis.com/pagespeedonline/v5/runPagespeed"
-	CrUXEndpoint      = "https://chromeuxreport.googleapis.com/v1/records:queryRecord"
+	PSIEndpoint         = "https://www.googleapis.com/pagespeedonline/v5/runPagespeed"
+	CrUXEndpoint        = "https://chromeuxreport.googleapis.com/v1/records:queryRecord"
 	CrUXHistoryEndpoint = "https://chromeuxreport.googleapis.com/v1/records:queryHistoryRecord"
-	IndexNowEndpoint  = "https://api.indexnow.org/indexnow"
+	IndexNowEndpoint    = "https://api.indexnow.org/indexnow"
 )
 
 var httpClient = &http.Client{Timeout: 90 * time.Second}
 
 // FieldMetric is one CrUX field-data metric
 type FieldMetric struct {
-	Name       string  `json:"name"`
-	Percentile int64   `json:"percentile"` // ms for durations, score*100 for CLS
-	Category   string  `json:"category"`   // FAST/SLOW/AVERAGE or GOOD/NEEDS-IMPROVEMENT/POOR
+	Name       string `json:"name"`
+	Percentile int64  `json:"percentile"` // ms for durations, score*100 for CLS
+	Category   string `json:"category"`   // FAST/SLOW/AVERAGE or GOOD/NEEDS-IMPROVEMENT/POOR
 }
 
 // LabMetric is one Lighthouse lab metric
@@ -45,12 +47,12 @@ type LabMetric struct {
 
 // PSIReport condenses a PageSpeed Insights run
 type PSIReport struct {
-	URL            string             `json:"url"`
-	Strategy       string             `json:"strategy"`
-	FieldOverall   string             `json:"field_overall_category,omitempty"`
-	FieldMetrics   []FieldMetric      `json:"field_metrics,omitempty"`
-	LabScores     map[string]int     `json:"lab_scores,omitempty"` // category name -> 0-100
-	LabMetrics    []LabMetric        `json:"lab_metrics,omitempty"`
+	URL          string         `json:"url"`
+	Strategy     string         `json:"strategy"`
+	FieldOverall string         `json:"field_overall_category,omitempty"`
+	FieldMetrics []FieldMetric  `json:"field_metrics,omitempty"`
+	LabScores    map[string]int `json:"lab_scores,omitempty"` // category name -> 0-100
+	LabMetrics   []LabMetric    `json:"lab_metrics,omitempty"`
 }
 
 // metricUnits describes how to interpret each CrUX metric key
@@ -96,7 +98,6 @@ func RunPSI(ctx context.Context, targetURL, strategy, apiKey string) (*PSIReport
 	q := url.Values{}
 	q.Set("url", targetURL)
 	q.Set("strategy", strategy)
-	q.Set("key", apiKey)
 	q.Set("category", "performance")
 	q.Set("category", "accessibility")
 	q.Set("category", "best-practices")
@@ -106,6 +107,7 @@ func RunPSI(ctx context.Context, targetURL, strategy, apiKey string) (*PSIReport
 	if err != nil {
 		return nil, err
 	}
+	req.Header.Set("X-goog-api-key", apiKey)
 	resp, err := httpClient.Do(req)
 	if err != nil {
 		return nil, err
@@ -149,7 +151,7 @@ func RunPSI(ctx context.Context, targetURL, strategy, apiKey string) (*PSIReport
 	report.LabScores = map[string]int{}
 	for cat, c := range apiResp.LighthouseResult.Categories {
 		if c.Score != nil {
-			report.LabScores[cat] = int(*c.Score * 100)
+			report.LabScores[cat] = int(math.Round(*c.Score * 100))
 		}
 	}
 	for _, auditKey := range []string{
@@ -175,12 +177,33 @@ type CrUXMetric struct {
 	Unit string `json:"unit"`
 }
 
+// CrUXMetricSeries is one metric's labeled 25-week p75 time series
+type CrUXMetricSeries struct {
+	Metric string   `json:"metric"`
+	P75s   []string `json:"p75s"` // 25 weekly p75 values, oldest first
+}
+
+// CrUXDate is a CrUX collection-period calendar date
+type CrUXDate struct {
+	Year  int `json:"year"`
+	Month int `json:"month"`
+	Day   int `json:"day"`
+}
+
+// CrUXCollectionPeriod is the date range covered by one weekly data point,
+// aligned by index with each CrUXMetricSeries.P75s entry.
+type CrUXCollectionPeriod struct {
+	FirstDate CrUXDate `json:"first_date"`
+	LastDate  CrUXDate `json:"last_date"`
+}
+
 // CrUXReport condenses a CrUX record (current or 25-week history)
 type CrUXReport struct {
-	OriginOrURL string       `json:"origin_or_url"`
-	FormFactor  string       `json:"form_factor,omitempty"`
-	Metrics     []CrUXMetric `json:"metrics"`
-	History     [][]string   `json:"history,omitempty"` // per metric: 25 weekly p75 values
+	OriginOrURL       string                 `json:"origin_or_url"`
+	FormFactor        string                 `json:"form_factor,omitempty"`
+	Metrics           []CrUXMetric           `json:"metrics"`
+	History           []CrUXMetricSeries     `json:"history,omitempty"`            // sorted by metric name
+	CollectionPeriods []CrUXCollectionPeriod `json:"collection_periods,omitempty"` // parallel to each series' P75s, if the API returned them
 }
 
 type cruxAPIResponse struct {
@@ -188,15 +211,19 @@ type cruxAPIResponse struct {
 		Message string `json:"message"`
 	} `json:"error"`
 	Record struct {
-		Metrics map[string]json.RawMessage `json:"metrics"`
+		Metrics           map[string]json.RawMessage `json:"metrics"`
+		CollectionPeriods []struct {
+			FirstDate CrUXDate `json:"firstDate"`
+			LastDate  CrUXDate `json:"lastDate"`
+		} `json:"collectionPeriods"`
 	} `json:"record"`
 }
 
 var cruxMetricMeta = map[string]struct{ name, unit string }{
-	"largest_contentful_paint": {"LCP", "ms"},
-	"interaction_to_next_paint": {"INP", "ms"},
-	"cumulative_layout_shift":   {"CLS", "score"},
-	"first_contentful_paint":    {"FCP", "ms"},
+	"largest_contentful_paint":        {"LCP", "ms"},
+	"interaction_to_next_paint":       {"INP", "ms"},
+	"cumulative_layout_shift":         {"CLS", "score"},
+	"first_contentful_paint":          {"FCP", "ms"},
 	"experimental_time_to_first_byte": {"TTFB", "ms"},
 }
 
@@ -223,11 +250,12 @@ func RunCrUX(ctx context.Context, targetURL, formFactor, apiKey string, history 
 	}
 	raw, _ := json.Marshal(payload)
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint+"?key="+url.QueryEscape(apiKey), bytes.NewReader(raw))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(raw))
 	if err != nil {
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-goog-api-key", apiKey)
 	resp, err := httpClient.Do(req)
 	if err != nil {
 		return nil, err
@@ -267,7 +295,9 @@ func RunCrUX(ctx context.Context, targetURL, formFactor, apiKey string, history 
 				} `json:"timeSeries"`
 			}
 			if err := json.Unmarshal(rawMetric, &ts); err == nil && len(ts.TimeSeries) > 0 {
-				report.History = append(report.History, ts.TimeSeries[0].P75s)
+				report.History = append(report.History, CrUXMetricSeries{
+					Metric: meta.name, P75s: ts.TimeSeries[0].P75s,
+				})
 			}
 		} else {
 			var rec struct {
@@ -282,17 +312,29 @@ func RunCrUX(ctx context.Context, targetURL, formFactor, apiKey string, history 
 			}
 		}
 	}
+
+	if history {
+		// Map iteration order is randomized; sort by metric name so repeated
+		// calls (and any consumer diffing output) see a stable, labeled order.
+		sort.Slice(report.History, func(i, j int) bool { return report.History[i].Metric < report.History[j].Metric })
+		for _, cp := range apiResp.Record.CollectionPeriods {
+			report.CollectionPeriods = append(report.CollectionPeriods, CrUXCollectionPeriod{
+				FirstDate: cp.FirstDate, LastDate: cp.LastDate,
+			})
+		}
+	}
+
 	return report, nil
 }
 
 // IndexNowReport is the outcome of an IndexNow submission
 type IndexNowReport struct {
-	Host        string   `json:"host"`
-	Key         string   `json:"key"`
-	URLs        []string `json:"urls"`
-	Status      int      `json:"status"`
-	StatusText  string   `json:"status_text"`
-	Accepted    bool     `json:"accepted"`
+	Host       string   `json:"host"`
+	Key        string   `json:"key"`
+	URLs       []string `json:"urls"`
+	Status     int      `json:"status"`
+	StatusText string   `json:"status_text"`
+	Accepted   bool     `json:"accepted"`
 }
 
 // GenerateIndexNowKey creates a random 32-hex-char key

@@ -6,9 +6,6 @@ import (
 	"fmt"
 	"html"
 	"html/template"
-	"os"
-	"os/exec"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -46,6 +43,7 @@ type ScoreCard struct {
 // AuditData aggregates all page audit results for report rendering
 type AuditData struct {
 	URL         string                      `json:"url"`
+	FinalURL    string                      `json:"final_url,omitempty"`
 	Host        string                      `json:"host"`
 	GeneratedAt string                      `json:"generated_at"`
 	Scores      ScoreCard                   `json:"scores"`
@@ -66,35 +64,44 @@ func BuildAuditData(ctx context.Context, client *crawler.SafeClient, targetURL s
 		return nil, fmt.Errorf("fetching %s failed: %w", targetURL, err)
 	}
 
+	// After a redirect (e.g. http://x -> https://www.x/), audit the page at
+	// its resolved location so self-canonical/hreflang checks compare against
+	// the URL the page actually lives at, not the originally requested one.
+	pageURL := res.FinalURL
+	if pageURL == "" {
+		pageURL = targetURL
+	}
+
 	hdrAudit := audit.InspectHeaders(res)
 
-	techAudit, err := audit.InspectHTML(targetURL, res.Body)
+	techAudit, err := audit.InspectHTML(pageURL, res.Body)
 	if err != nil {
 		return nil, fmt.Errorf("technical audit failed: %w", err)
 	}
 
-	schemaAudit := audit.InspectSchema(targetURL, res.Body)
+	schemaAudit := audit.InspectSchema(pageURL, res.Body)
 
-	imagesAudit, err := audit.InspectImages(targetURL, res.Body)
+	imagesAudit, err := audit.InspectImages(pageURL, res.Body)
 	if err != nil {
 		return nil, fmt.Errorf("images audit failed: %w", err)
 	}
 
-	contentAudit, err := audit.InspectContent(targetURL, res.Body, "")
+	contentAudit, err := audit.InspectContent(pageURL, res.Body, "")
 	if err != nil {
 		return nil, fmt.Errorf("content audit failed: %w", err)
 	}
 
-	hreflangAudit, err := audit.InspectHreflang(targetURL, res.Body)
+	hreflangAudit, err := audit.InspectHreflang(pageURL, res.Body)
 	if err != nil {
 		return nil, fmt.Errorf("hreflang audit failed: %w", err)
 	}
 
-	llmsReport, _ := audit.InspectLLMSTxt(ctx, client, targetURL)
+	llmsReport, _ := audit.InspectLLMSTxt(ctx, client, pageURL)
 
 	data := &AuditData{
 		URL:         targetURL,
-		Host:        extractHostSimple(targetURL),
+		FinalURL:    pageURL,
+		Host:        extractHostSimple(pageURL),
 		GeneratedAt: time.Now().UTC().Format("2006-01-02 15:04:05 UTC"),
 		Headers:     hdrAudit,
 		Technical:   techAudit,
@@ -107,6 +114,16 @@ func BuildAuditData(ctx context.Context, client *crawler.SafeClient, targetURL s
 	}
 
 	computeScoresAndIssues(data)
+
+	if res.Truncated {
+		data.Issues = append(data.Issues, Issue{
+			Severity:       SeverityWarning,
+			Category:       "Technical",
+			Message:        "body truncated at 15MB; audit incomplete",
+			Recommendation: "The response exceeded the crawler's 15MB body cap and was cut off; content past that point was not analyzed.",
+		})
+	}
+
 	return data, nil
 }
 
@@ -125,23 +142,31 @@ func computeScoresAndIssues(data *AuditData) {
 	data.Scores.Content = data.Content.Score
 	data.Scores.Media = data.Images.Score
 
-	// 1. Technical Issues
-	if data.Headers.StatusCode != 200 {
-		data.Scores.Technical = clamp(data.Scores.Technical-30, 0, 100)
+	// 1. Header/Transport Issues (status code, redirect chain health,
+	// X-Robots-Tag indexability, HTTP Link canonical, compression/TTFB, HSTS).
+	// Transport-level directives are technical SEO, so they feed the
+	// Technical score just like the on-page checks below.
+	for _, iss := range data.Headers.Issues {
+		sev := IssueSeverity(iss.Severity)
+		category := "Headers"
+		if iss.Category == "Indexability" {
+			category = "Indexability"
+		}
+		switch sev {
+		case SeverityCritical:
+			data.Scores.Technical = clamp(data.Scores.Technical-20, 0, 100)
+		case SeverityWarning:
+			data.Scores.Technical = clamp(data.Scores.Technical-5, 0, 100)
+		}
 		data.Issues = append(data.Issues, Issue{
-			Severity:       SeverityCritical,
-			Category:       "Technical",
-			Message:        fmt.Sprintf("HTTP status %d", data.Headers.StatusCode),
-			Recommendation: "Ensure the page returns HTTP 200 OK for crawlers.",
-		})
-	} else {
-		data.Issues = append(data.Issues, Issue{
-			Severity: SeverityPass,
-			Category: "Technical",
-			Message:  "Page returned HTTP 200 OK",
+			Severity:       sev,
+			Category:       category,
+			Message:        iss.Message,
+			Recommendation: iss.Details,
 		})
 	}
 
+	// 2. Technical Issues (on-page HTML: title, meta, canonical, OG tags)
 	for _, iss := range data.Technical.Issues {
 		sev := SeverityWarning
 		if iss.Severity == audit.SeverityCritical {
@@ -155,7 +180,7 @@ func computeScoresAndIssues(data *AuditData) {
 		})
 	}
 
-	// 2. Schema Issues
+	// 3. Schema Issues
 	if data.Schema.BlocksCount == 0 {
 		data.Issues = append(data.Issues, Issue{
 			Severity:       SeverityCritical,
@@ -193,7 +218,7 @@ func computeScoresAndIssues(data *AuditData) {
 		}
 	}
 
-	// 3. Content Issues
+	// 4. Content Issues
 	for _, iss := range data.Content.Issues {
 		sev := SeverityWarning
 		if iss.Severity == audit.SeverityCritical {
@@ -207,7 +232,7 @@ func computeScoresAndIssues(data *AuditData) {
 		})
 	}
 
-	// 4. Media Issues
+	// 5. Media Issues
 	for _, iss := range data.Images.Issues {
 		sev := SeverityWarning
 		if iss.Severity == audit.SeverityCritical {
@@ -221,7 +246,7 @@ func computeScoresAndIssues(data *AuditData) {
 		})
 	}
 
-	// 5. Hreflang Issues
+	// 6. Hreflang Issues
 	for _, iss := range data.Hreflang.Issues {
 		data.Issues = append(data.Issues, Issue{
 			Severity:       SeverityWarning,
@@ -295,73 +320,6 @@ func RenderHTML(data *AuditData) (string, error) {
 	}
 
 	return buf.String(), nil
-}
-
-// PDFRendererInfo contains details of the detected PDF tool
-type PDFRendererInfo struct {
-	Command string
-	Type    string // "weasyprint", "chrome", "wkhtmltopdf"
-}
-
-// DetectPDFRenderer checks PATH for available PDF conversion engines
-func DetectPDFRenderer() *PDFRendererInfo {
-	if path, err := exec.LookPath("weasyprint"); err == nil {
-		return &PDFRendererInfo{Command: path, Type: "weasyprint"}
-	}
-	for _, bin := range []string{"google-chrome", "chromium", "chromium-browser", "chrome", "msedge"} {
-		if path, err := exec.LookPath(bin); err == nil {
-			return &PDFRendererInfo{Command: path, Type: "chrome"}
-		}
-	}
-	if path, err := exec.LookPath("wkhtmltopdf"); err == nil {
-		return &PDFRendererInfo{Command: path, Type: "wkhtmltopdf"}
-	}
-	return nil
-}
-
-// ExportPDF renders HTML content to a PDF file using the best available renderer
-func ExportPDF(ctx context.Context, htmlContent, outputPath string) (*PDFRendererInfo, error) {
-	renderer := DetectPDFRenderer()
-	if renderer == nil {
-		return nil, fmt.Errorf("no PDF engine detected (install weasyprint or chromium)")
-	}
-
-	// Create a temp file for HTML input
-	tmpDir := os.TempDir()
-	tmpHTML := filepath.Join(tmpDir, fmt.Sprintf("seo_report_%d.html", time.Now().UnixNano()))
-	if err := os.WriteFile(tmpHTML, []byte(htmlContent), 0o644); err != nil {
-		return nil, fmt.Errorf("writing temporary HTML: %w", err)
-	}
-	defer os.Remove(tmpHTML)
-
-	absOut, err := filepath.Abs(outputPath)
-	if err != nil {
-		absOut = outputPath
-	}
-
-	var cmd *exec.Cmd
-	switch renderer.Type {
-	case "weasyprint":
-		cmd = exec.CommandContext(ctx, renderer.Command, tmpHTML, absOut)
-	case "chrome":
-		cmd = exec.CommandContext(ctx, renderer.Command,
-			"--headless=new",
-			"--disable-gpu",
-			"--no-sandbox",
-			"--no-pdf-header-footer",
-			fmt.Sprintf("--print-to-pdf=%s", absOut),
-			tmpHTML,
-		)
-	case "wkhtmltopdf":
-		cmd = exec.CommandContext(ctx, renderer.Command, "--enable-local-file-access", tmpHTML, absOut)
-	}
-
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		return nil, fmt.Errorf("%s failed: %w (output: %s)", renderer.Type, err, string(out))
-	}
-
-	return renderer, nil
 }
 
 const reportHTMLTemplate = `<!DOCTYPE html>
@@ -509,6 +467,7 @@ const reportHTMLTemplate = `<!DOCTYPE html>
     </div>
     <h1>{{ .Host }}</h1>
     <div class="meta-url">{{ .URL }}</div>
+    {{ if and .FinalURL (ne .FinalURL .URL) }}<div class="meta-url" style="margin-top: 2px;">&rarr; Redirected to: {{ .FinalURL }}</div>{{ end }}
   </header>
 
   <!-- Score Cards -->

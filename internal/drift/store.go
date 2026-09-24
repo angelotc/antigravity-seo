@@ -16,6 +16,7 @@ import (
 	"antigravity-seo/internal/audit"
 	"antigravity-seo/internal/crawler"
 	"antigravity-seo/internal/runtime"
+	"antigravity-seo/internal/urlnorm"
 )
 
 // Snapshot captures the SEO-relevant state of one page at one point in time
@@ -37,7 +38,7 @@ type Snapshot struct {
 
 // Diff is one field-level change between two snapshots
 type Diff struct {
-	Field string `json:"field"`
+	Field  string `json:"field"`
 	Before string `json:"before"`
 	After  string `json:"after"`
 }
@@ -51,7 +52,20 @@ type CompareReport struct {
 	Changes      []Diff    `json:"changes"`
 }
 
+// urlKey returns the dedupe key used to name snapshot files for a URL. It
+// uses the shared urlnorm.Key normalization (case-sensitive path, IDN host,
+// tracking-param stripping) so e.g. /About and /about are tracked as
+// distinct pages instead of colliding on a single history.
 func urlKey(rawURL string) string {
+	norm := urlnorm.Key(rawURL, nil)
+	sum := sha256.Sum256([]byte(norm))
+	return hex.EncodeToString(sum[:])[:16]
+}
+
+// legacyURLKey reproduces the pre-urlnorm key scheme (whole URL lowercased,
+// trailing slash trimmed). History/Latest fall back to it so snapshots
+// captured before the urlnorm.Key switch are not silently orphaned.
+func legacyURLKey(rawURL string) string {
 	norm := strings.ToLower(strings.TrimRight(rawURL, "/"))
 	sum := sha256.Sum256([]byte(norm))
 	return hex.EncodeToString(sum[:])[:16]
@@ -116,7 +130,10 @@ func Baseline(rawURL string, res *crawler.FetchResult) (*Snapshot, string, error
 	return &snap, p, nil
 }
 
-// History lists all snapshots for a URL, oldest first
+// History lists all snapshots for a URL, oldest first. It looks up
+// snapshots under the current urlnorm.Key scheme first, falling back to the
+// legacy (naive lowercase) key when that has no history, so pages baselined
+// before the urlnorm.Key switch keep their existing snapshots.
 func History(rawURL string) ([]Snapshot, error) {
 	entries, err := os.ReadDir(runtime.DriftDir())
 	if err != nil {
@@ -126,7 +143,15 @@ func History(rawURL string) ([]Snapshot, error) {
 		return nil, err
 	}
 
-	prefix := urlKey(rawURL) + "-"
+	snaps := collectSnapshots(entries, urlKey(rawURL)+"-")
+	if len(snaps) == 0 {
+		snaps = collectSnapshots(entries, legacyURLKey(rawURL)+"-")
+	}
+	sort.Slice(snaps, func(i, j int) bool { return snaps[i].Timestamp.Before(snaps[j].Timestamp) })
+	return snaps, nil
+}
+
+func collectSnapshots(entries []os.DirEntry, prefix string) []Snapshot {
 	var snaps []Snapshot
 	for _, e := range entries {
 		if e.IsDir() || !strings.HasPrefix(e.Name(), prefix) || !strings.HasSuffix(e.Name(), ".json") {
@@ -142,8 +167,7 @@ func History(rawURL string) ([]Snapshot, error) {
 		}
 		snaps = append(snaps, s)
 	}
-	sort.Slice(snaps, func(i, j int) bool { return snaps[i].Timestamp.Before(snaps[j].Timestamp) })
-	return snaps, nil
+	return snaps
 }
 
 // Latest returns the most recent baseline snapshot for a URL
@@ -173,16 +197,15 @@ func Compare(rawURL string, res *crawler.FetchResult) (*CompareReport, error) {
 		Changes:      []Diff{},
 	}
 
+	significant := false
 	diff := func(field, before, after string) {
 		if before != after {
 			report.Changes = append(report.Changes, Diff{Field: field, Before: before, After: after})
+			significant = true
 		}
 	}
 	diffInt := func(field string, before, after int) {
 		diff(field, fmt.Sprintf("%d", before), fmt.Sprintf("%d", after))
-	}
-	diffInt64 := func(field string, before, after int64) {
-		diff(field, fmt.Sprintf("%dms", before), fmt.Sprintf("%dms", after))
 	}
 
 	diff("status_code", fmt.Sprintf("%d", base.StatusCode), fmt.Sprintf("%d", current.StatusCode))
@@ -195,8 +218,27 @@ func Compare(rawURL string, res *crawler.FetchResult) (*CompareReport, error) {
 	diffInt("word_count", base.WordCount, current.WordCount)
 	diffInt("image_count", base.ImageCount, current.ImageCount)
 	diffInt("internal_links", base.InternalLinks, current.InternalLinks)
-	diffInt64("ttfb_ms", base.TTFBMS, current.TTFBMS)
 
-	report.Changed = len(report.Changes) > 0
+	// TTFB is noisy (network jitter, CDN cache state, cold vs warm
+	// connections) and would otherwise flip Changed on almost every run.
+	// Report any shift informationally, but only let it count toward
+	// Changed when it is both large in absolute terms (>500ms) and large
+	// relative to the baseline (>50%, or the baseline was ~0ms).
+	if base.TTFBMS != current.TTFBMS {
+		report.Changes = append(report.Changes, Diff{
+			Field:  "ttfb_ms",
+			Before: fmt.Sprintf("%dms", base.TTFBMS),
+			After:  fmt.Sprintf("%dms", current.TTFBMS),
+		})
+		delta := current.TTFBMS - base.TTFBMS
+		if delta < 0 {
+			delta = -delta
+		}
+		if delta > 500 && (base.TTFBMS == 0 || float64(delta) > float64(base.TTFBMS)*0.5) {
+			significant = true
+		}
+	}
+
+	report.Changed = significant
 	return report, nil
 }

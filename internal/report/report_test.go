@@ -81,46 +81,33 @@ func TestReportDataAndScoring(t *testing.T) {
 	}
 }
 
-func TestExportPDF(t *testing.T) {
-	renderer := DetectPDFRenderer()
-	if renderer == nil {
-		t.Skip("No PDF renderer installed on host, skipping PDF test")
-	}
-
-	tmpDir := t.TempDir()
-	outPDF := filepath.Join(tmpDir, "test_audit.pdf")
+func TestBuildAuditDataTruncatedWarning(t *testing.T) {
+	big := strings.Repeat("a", 2000)
+	page := "<html><head><title>T</title></head><body><p>" + big + "</p></body></html>"
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		_, _ = w.Write([]byte(page))
+	}))
+	defer ts.Close()
 
 	client := crawler.NewSafeClient(crawler.ClientOptions{
 		Timeout:         5 * time.Second,
 		AllowPrivateIPs: true,
+		MaxBodyBytes:    500,
 	})
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		_, _ = w.Write([]byte(sampleHTML))
-	}))
-	defer ts.Close()
-
 	data, err := BuildAuditData(context.Background(), client, ts.URL)
 	if err != nil {
 		t.Fatalf("BuildAuditData failed: %v", err)
 	}
 
-	htmlContent, err := RenderHTML(data)
-	if err != nil {
-		t.Fatalf("RenderHTML failed: %v", err)
+	found := false
+	for _, iss := range data.Issues {
+		if strings.Contains(iss.Message, "truncated") {
+			found = true
+		}
 	}
-
-	info, err := ExportPDF(context.Background(), htmlContent, outPDF)
-	if err != nil {
-		t.Fatalf("ExportPDF failed with %s: %v", renderer.Type, err)
-	}
-	if info.Type != renderer.Type {
-		t.Errorf("expected renderer %s, got %s", renderer.Type, info.Type)
-	}
-
-	stat, err := os.Stat(outPDF)
-	if err != nil || stat.Size() == 0 {
-		t.Fatalf("expected non-empty PDF file at %s", outPDF)
+	if !found {
+		t.Errorf("expected a body-truncation warning issue, got: %+v", data.Issues)
 	}
 }
 
@@ -172,4 +159,3 @@ func TestRenderNativePDF(t *testing.T) {
 		t.Errorf("expected %%PDF- magic header, got %s", string(pdfBytes[:5]))
 	}
 }
-

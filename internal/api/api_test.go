@@ -19,8 +19,12 @@ func TestPSINoKey(t *testing.T) {
 func TestPSISuccess(t *testing.T) {
 	var ts *httptest.Server
 	ts = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Query().Get("key") != "k" || r.URL.Query().Get("strategy") != "mobile" {
+		if r.Header.Get("X-goog-api-key") != "k" || r.URL.Query().Get("strategy") != "mobile" {
 			http.Error(w, "bad params", http.StatusBadRequest)
+			return
+		}
+		if r.URL.Query().Get("key") != "" {
+			http.Error(w, "api key must not be sent as a query param", http.StatusBadRequest)
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
@@ -62,11 +66,15 @@ func TestPSISuccess(t *testing.T) {
 func TestCrUXHistory(t *testing.T) {
 	var ts *httptest.Server
 	ts = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !strings.Contains(r.URL.RawQuery, "key=k") {
+		if r.Header.Get("X-goog-api-key") != "k" {
 			http.Error(w, "missing key", http.StatusBadRequest)
 			return
 		}
-		_, _ = w.Write([]byte(`{"record":{"metrics":{"largest_contentful_paint":{"timeSeries":[{"p75s":["2500","2400","2300"]}]}}}}`))
+		if strings.Contains(r.URL.RawQuery, "key=") {
+			http.Error(w, "api key must not be sent as a query param", http.StatusBadRequest)
+			return
+		}
+		_, _ = w.Write([]byte(`{"record":{"metrics":{"largest_contentful_paint":{"timeSeries":[{"p75s":["2500","2400","2300"]}]},"interaction_to_next_paint":{"timeSeries":[{"p75s":["150","140","130"]}]}},"collectionPeriods":[{"firstDate":{"year":2026,"month":8,"day":1},"lastDate":{"year":2026,"month":8,"day":7}}]}}`))
 	}))
 	defer ts.Close()
 	old := CrUXHistoryEndpoint
@@ -77,8 +85,15 @@ func TestCrUXHistory(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(report.History) != 1 || len(report.History[0]) != 3 {
+	if len(report.History) != 2 || len(report.History[0].P75s) != 3 {
 		t.Errorf("history parse failed: %+v", report)
+	}
+	// Sorted by metric name: INP before LCP.
+	if report.History[0].Metric != "INP" || report.History[1].Metric != "LCP" {
+		t.Errorf("expected history sorted by metric name, got %+v", report.History)
+	}
+	if len(report.CollectionPeriods) != 1 || report.CollectionPeriods[0].FirstDate.Year != 2026 {
+		t.Errorf("expected collection periods to be parsed, got %+v", report.CollectionPeriods)
 	}
 }
 

@@ -13,16 +13,16 @@ import (
 )
 
 var (
-	CCCollinfoEndpoint = "https://index.commoncrawl.org/collinfo.json"
-	CCIndexBaseURL     = "https://index.commoncrawl.org"
+	CCCollinfoEndpoint   = "https://index.commoncrawl.org/collinfo.json"
+	CCIndexBaseURL       = "https://index.commoncrawl.org"
 	DefaultFallbackCrawl = "CC-MAIN-2026-34"
 )
 
 // CCCollection represents one Common Crawl archive release
 type CCCollection struct {
-	ID      string `json:"id"`
-	Name    string `json:"name"`
-	CDXAPI  string `json:"cdx-api"`
+	ID     string `json:"id"`
+	Name   string `json:"name"`
+	CDXAPI string `json:"cdx-api"`
 }
 
 // CCRecord is one captured page from the Common Crawl CDX index
@@ -37,7 +37,10 @@ type CCRecord struct {
 	Filename  string `json:"filename,omitempty"`
 }
 
-// BacklinksReport summarizes domain indexed graph and crawl records
+// BacklinksReport summarizes a domain's own presence in the Common Crawl
+// capture index — the archived URLs Common Crawl has crawled on this domain
+// — not inbound links from other sites. The CDX query matches *.domain/*,
+// which lists this domain's own pages, not who links to them.
 type BacklinksReport struct {
 	Domain        string         `json:"domain"`
 	CrawlIndex    string         `json:"crawl_index"`
@@ -78,8 +81,12 @@ func GetLatestCrawlIndex(ctx context.Context) (string, error) {
 	return collections[0].ID, nil
 }
 
-// QueryCommonCrawlBacklinks queries the open Common Crawl CDX index for domain presence,
-// captures, and linked pages. 100% keyless and zero-cost.
+// QueryCommonCrawlBacklinks queries the open Common Crawl CDX index for this
+// domain's own archived captures (URL, timestamp, status, MIME, language).
+// This is Common Crawl's capture index for the domain itself — it does NOT
+// return inbound links / referring domains, despite the function's name
+// (kept for the CLI's existing `backlinks` command). 100% keyless and
+// zero-cost.
 func QueryCommonCrawlBacklinks(ctx context.Context, domainOrURL string, limit int, crawlID string) (*BacklinksReport, error) {
 	cleanDomain := cleanDomainTarget(domainOrURL)
 	if cleanDomain == "" {
