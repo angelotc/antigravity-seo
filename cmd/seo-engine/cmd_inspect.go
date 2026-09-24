@@ -50,6 +50,22 @@ func runHeadersCmd(args []string) {
 			fmt.Printf("  #%d: %s -> %d\n", i+1, hop.URL, hop.StatusCode)
 		}
 	}
+	if len(res.Redirects) > 0 {
+		fmt.Println("Hop Timings:")
+		for i, hop := range res.Redirects {
+			fmt.Printf("  #%d: %s  dns=%dms tcp=%dms tls=%dms ttfb=%dms total=%dms\n",
+				i+1, hop.URL, hop.Timings.DNSLookupMS, hop.Timings.TCPConnectMS, hop.Timings.TLSHandshakeMS, hop.Timings.TTFBMS, hop.Timings.TotalMS)
+		}
+		fmt.Printf("  final: %s  dns=%dms tcp=%dms tls=%dms ttfb=%dms total=%dms\n",
+			res.FinalURL, res.Timings.DNSLookupMS, res.Timings.TCPConnectMS, res.Timings.TLSHandshakeMS, res.Timings.TTFBMS, res.Timings.TotalMS)
+		fmt.Printf("  chain total elapsed: %dms\n", res.TotalElapsedMS)
+	}
+	if res.Charset != "" {
+		fmt.Printf("Charset:          %s\n", res.Charset)
+	}
+	if res.Truncated {
+		fmt.Printf("Body Truncated:   true (capped at %d bytes)\n", res.BodySize)
+	}
 	fmt.Printf("X-Robots-Tag:     %s (Noindex: %t, Nofollow: %t)\n", result.XRobotsTag, result.HasNoindex, result.HasNofollow)
 	if result.HeaderCanonical != "" {
 		fmt.Printf("Header Canonical: %s\n", result.HeaderCanonical)
@@ -187,14 +203,14 @@ func runPageCmd(args []string) {
 
 	if *asJSON {
 		outputJSON(map[string]interface{}{
-			"url":       targetURL,
+			"url":        targetURL,
 			"page_score": pageScore,
-			"headers":   hdrAudit,
-			"technical": htmlAudit,
-			"schema":    schemaAudit,
-			"images":    imagesAudit,
-			"content":   contentAudit,
-			"hreflang":  hreflangAudit,
+			"headers":    hdrAudit,
+			"technical":  htmlAudit,
+			"schema":     schemaAudit,
+			"images":     imagesAudit,
+			"content":    contentAudit,
+			"hreflang":   hreflangAudit,
 		})
 		return
 	}
@@ -317,6 +333,13 @@ func runSitemapCmd(args []string) {
 		fmt.Printf("\nBROKEN URLS IN SITEMAP (%d):\n", len(report.BrokenURLs))
 		for _, b := range report.BrokenURLs {
 			fmt.Printf("  [404/ERR] %s\n", b)
+		}
+	}
+
+	if len(report.BlockedURLs) > 0 {
+		fmt.Printf("\nBLOCKED URLS IN SITEMAP (%d, not counted as broken):\n", len(report.BlockedURLs))
+		for _, b := range report.BlockedURLs {
+			fmt.Printf("  [401/403/429] %s\n", b)
 		}
 	}
 

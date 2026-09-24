@@ -7,6 +7,7 @@ import (
 	"encoding/xml"
 	"fmt"
 	"io"
+	"net/http"
 	"net/url"
 	"strings"
 	"sync"
@@ -35,6 +36,7 @@ type SitemapReport struct {
 	TotalURLs       int          `json:"total_urls"`
 	SampleURLs      []SitemapURL `json:"sample_urls"`
 	BrokenURLs      []string     `json:"broken_urls,omitempty"`
+	BlockedURLs     []string     `json:"blocked_urls,omitempty"` // 401/403/429: auth/bot-protected, not verified broken
 	RedirectingURLs []string     `json:"redirecting_urls,omitempty"`
 	Errors          []string     `json:"errors,omitempty"`
 	DurationMS      int64        `json:"duration_ms"`
@@ -156,13 +158,15 @@ func (c *SafeClient) InspectSitemap(ctx context.Context, sitemapURL string, chec
 				brokenLock.Lock()
 				defer brokenLock.Unlock()
 
-				if fetchErr != nil || (r != nil && r.StatusCode >= 400) {
-					status := 0
-					if r != nil {
-						status = r.StatusCode
-					}
-					report.BrokenURLs = append(report.BrokenURLs, fmt.Sprintf("%s (Status: %d)", target, status))
-				} else if r != nil && len(r.Redirects) > 0 {
+				switch {
+				case fetchErr != nil:
+					report.BrokenURLs = append(report.BrokenURLs, fmt.Sprintf("%s (Status: %d)", target, 0))
+				case r.StatusCode == http.StatusUnauthorized || r.StatusCode == http.StatusForbidden || r.StatusCode == http.StatusTooManyRequests:
+					// Bot/auth protection, not a real dead link; keep it out of BrokenURLs.
+					report.BlockedURLs = append(report.BlockedURLs, fmt.Sprintf("%s (Status: %d, auth/bot-protected, not verified)", target, r.StatusCode))
+				case r.StatusCode >= 400:
+					report.BrokenURLs = append(report.BrokenURLs, fmt.Sprintf("%s (Status: %d)", target, r.StatusCode))
+				case len(r.Redirects) > 0:
 					report.RedirectingURLs = append(report.RedirectingURLs, fmt.Sprintf("%s -> %s (%d)", target, r.FinalURL, r.Redirects[0].StatusCode))
 				}
 			}(item.Loc)

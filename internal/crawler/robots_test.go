@@ -80,11 +80,11 @@ Disallow: /exact$
 	}{
 		{"/file.pdf", false},
 		{"/docs/file.pdf", false},
-		{"/file.pdfx", true},   // $ anchors end
+		{"/file.pdfx", true}, // $ anchors end
 		{"/tmp", false},
 		{"/tmp/whatever", false},
 		{"/exact", false},
-		{"/exact/sub", true},   // $ prevents prefix match
+		{"/exact/sub", true}, // $ prevents prefix match
 		{"/other", true},
 	}
 	for _, c := range cases {

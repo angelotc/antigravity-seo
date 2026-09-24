@@ -10,12 +10,12 @@ import (
 
 // AICrawlerStatus describes access policy for a specific AI bot
 type AICrawlerStatus struct {
-	UserAgent        string   `json:"user_agent"`
-	Purpose          string   `json:"purpose"`
-	Status           string   `json:"status"` // Allowed, Disallowed, Partial Restrictions
-	EffectiveGroup   string   `json:"effective_group,omitempty"`
-	CrawlDelaySec    float64  `json:"crawl_delay_seconds,omitempty"`
-	DisallowedPaths  []string `json:"disallowed_paths,omitempty"`
+	UserAgent       string   `json:"user_agent"`
+	Purpose         string   `json:"purpose"`
+	Status          string   `json:"status"` // Allowed, Disallowed, Partial Restrictions
+	EffectiveGroup  string   `json:"effective_group,omitempty"`
+	CrawlDelaySec   float64  `json:"crawl_delay_seconds,omitempty"`
+	DisallowedPaths []string `json:"disallowed_paths,omitempty"`
 }
 
 // RobotsReport contains a complete breakdown of robots.txt rules
@@ -54,10 +54,10 @@ type accessRule struct {
 // agentGroup is a robots.txt rule group: one or more User-agent lines
 // followed by rules, terminated by the next User-agent line after a rule.
 type agentGroup struct {
-	agents    []string
-	rules     []accessRule
+	agents     []string
+	rules      []accessRule
 	crawlDelay float64
-	hasDelay  bool
+	hasDelay   bool
 }
 
 // parsedRobots is the parsed representation of a robots.txt body
@@ -262,12 +262,12 @@ func (c *SafeClient) InspectRobots(ctx context.Context, robotsURL string) (*Robo
 	}
 
 	report := &RobotsReport{
-		URL:         robotsURL,
-		Exists:      res.StatusCode == 200,
-		StatusCode:  res.StatusCode,
-		Sitemaps:    []string{},
-		UserAgents:  []string{},
-		AICrawlers:  []AICrawlerStatus{},
+		URL:        robotsURL,
+		Exists:     res.StatusCode == 200,
+		StatusCode: res.StatusCode,
+		Sitemaps:   []string{},
+		UserAgents: []string{},
+		AICrawlers: []AICrawlerStatus{},
 	}
 
 	if res.StatusCode != 200 {
