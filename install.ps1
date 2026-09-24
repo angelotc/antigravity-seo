@@ -8,18 +8,25 @@
 #
 # Operational contract:
 #   1. Copies or clones plugin into ~/.gemini/config/plugins/antigravity-seo
-#   2. Builds or downloads the Go engine (bin\seo-engine.exe)
+#   2. Builds or downloads the Go engine (bin\seo-engine.exe), verifying the
+#      SHA256 checksum of any downloaded binary against the release's
+#      SHA256SUMS.txt
 #   3. Runs `seo-engine setup` and verifies readiness with `seo-engine doctor`
 #
 # Overrides:
-#   $env:INSTALL_DIR  plugin target directory (default: ~\.gemini\config\plugins)
+#   $env:INSTALL_DIR          plugin target directory (default: ~\.gemini\config\plugins)
+#   $env:SEO_ENGINE_VERSION   release tag to install, without the leading "v"
+#                             (default: the version pinned in this script / plugin.json)
 #
 # Exit codes: 0 = ready, 10 = partial (usable, with warnings), 1 = failure
 
 $ErrorActionPreference = "Stop"
 
+# Keep in lockstep with plugin.json / marketplace.json / cmd/seo-engine/main.go
+# -- the CI version-consistency check fails the build if these drift apart.
+$SeoEngineDefaultVersion = "2.1.0"
+
 $RepoUrl = "https://github.com/angelotc/antigravity-seo.git"
-$ZipUrl = "https://github.com/angelotc/antigravity-seo/archive/refs/heads/main.zip"
 $InstallDir = if ($env:INSTALL_DIR) { $env:INSTALL_DIR } else { Join-Path $env:USERPROFILE ".gemini\config\plugins" }
 $PluginName = "antigravity-seo"
 $Target = Join-Path $InstallDir $PluginName
@@ -27,6 +34,21 @@ $Target = Join-Path $InstallDir $PluginName
 function Write-Info($msg) { Write-Host "==> $msg" -ForegroundColor Green }
 function Write-Warn($msg) { Write-Host "WARN: $msg" -ForegroundColor Yellow }
 function Die($msg) { Write-Host "ERROR: $msg" -ForegroundColor Red; exit 1 }
+
+# Test-Checksum: looks up $Name in a `sha256sum`-style checksums file (lines
+# of "<hex-digest>  <filename>") and compares it against the actual SHA256 of
+# $File. Returns $true on match, $false otherwise.
+function Test-Checksum($File, $SumsFile, $Name) {
+    foreach ($line in Get-Content $SumsFile) {
+        $parts = $line -split '\s+'
+        if ($parts.Length -ge 2 -and $parts[1] -eq $Name) {
+            $expected = $parts[0].ToLowerInvariant()
+            $actual = (Get-FileHash -Path $File -Algorithm SHA256).Hash.ToLowerInvariant()
+            return ($expected -eq $actual)
+        }
+    }
+    return $false
+}
 
 Write-Info "antigravity-seo installer"
 
@@ -38,6 +60,23 @@ if ($MyInvocation.MyCommand.Path) {
         $SrcDir = $PotentialDir
     }
 }
+
+# ------------------------------------------------------------- resolve version
+# Precedence: explicit $env:SEO_ENGINE_VERSION override > the version declared
+# in a local checkout's plugin.json > the default pinned in this script.
+$Version = $env:SEO_ENGINE_VERSION
+if (-not $Version -and $SrcDir) {
+    $pluginJsonPath = Join-Path $SrcDir "plugin.json"
+    if (Test-Path $pluginJsonPath) {
+        try {
+            $Version = (Get-Content $pluginJsonPath -Raw | ConvertFrom-Json).version
+        } catch {
+            $Version = $null
+        }
+    }
+}
+if (-not $Version) { $Version = $SeoEngineDefaultVersion }
+$ZipUrl = "https://github.com/angelotc/antigravity-seo/archive/refs/tags/v$Version.zip"
 
 New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
 
@@ -67,12 +106,17 @@ if ($SrcDir) {
         }
     } else {
         if (-not (Test-Path $Target)) {
-            Write-Info "Git not found - downloading release zip archive"
-            $tempZip = Join-Path $env:TEMP "antigravity-seo-main.zip"
+            Write-Info "Git not found - downloading release archive for v$Version"
+            $tempZip = Join-Path $env:TEMP "antigravity-seo-$Version.zip"
+            $tempExtract = Join-Path $env:TEMP "antigravity-seo-extract-$Version"
+            if (Test-Path $tempExtract) { Remove-Item -Recurse -Force $tempExtract }
             Invoke-WebRequest -Uri $ZipUrl -OutFile $tempZip
-            Expand-Archive -Path $tempZip -DestinationPath $env:TEMP -Force
-            Move-Item (Join-Path $env:TEMP "antigravity-seo-main") $Target
-            Remove-Item $tempZip -Force
+            Expand-Archive -Path $tempZip -DestinationPath $tempExtract -Force
+            $extractedDir = Get-ChildItem -Path $tempExtract -Directory | Select-Object -First 1
+            if (-not $extractedDir) { Die "release archive for v$Version did not contain a source directory" }
+            Move-Item $extractedDir.FullName $Target
+            Remove-Item $tempZip -Force -ErrorAction SilentlyContinue
+            Remove-Item -Recurse -Force $tempExtract -ErrorAction SilentlyContinue
         }
     }
     $WorkingDir = $Target
@@ -87,7 +131,7 @@ if ($go) {
     Write-Info "Building seo-engine with $(go version)"
     Push-Location $WorkingDir
     try {
-        go build -buildvcs=false -o bin/seo-engine.exe ./cmd/seo-engine
+        go build -buildvcs=false -ldflags="-X main.Version=$Version" -o bin/seo-engine.exe ./cmd/seo-engine
         if ($LASTEXITCODE -ne 0) { Die "engine build failed" }
     } finally {
         Pop-Location
@@ -95,13 +139,24 @@ if ($go) {
 } elseif (Test-Path $Engine) {
     Write-Warn "Go toolchain not found - keeping existing prebuilt engine at $Engine"
 } else {
-    $ReleaseUrl = "https://github.com/angelotc/antigravity-seo/releases/latest/download/seo-engine-windows-amd64.exe"
-    Write-Info "Go not found; attempting to download prebuilt binary..."
+    $BinaryName = "seo-engine-windows-amd64.exe"
+    $ReleaseUrl = "https://github.com/angelotc/antigravity-seo/releases/download/v$Version/$BinaryName"
+    $SumsUrl = "https://github.com/angelotc/antigravity-seo/releases/download/v$Version/SHA256SUMS.txt"
+    Write-Info "Go not found; attempting to download prebuilt binary v$Version..."
+    $tempSums = Join-Path $env:TEMP "antigravity-seo-SHA256SUMS-$Version.txt"
     try {
         Invoke-WebRequest -Uri $ReleaseUrl -OutFile $Engine
-        Write-Info "Successfully downloaded prebuilt engine to $Engine"
+        Invoke-WebRequest -Uri $SumsUrl -OutFile $tempSums
+        if (-not (Test-Checksum -File $Engine -SumsFile $tempSums -Name $BinaryName)) {
+            Remove-Item $Engine -Force -ErrorAction SilentlyContinue
+            Die "checksum verification failed for $BinaryName - refusing to install an unverified binary"
+        }
+        Write-Info "Checksum verified - downloaded prebuilt engine to $Engine"
     } catch {
-        Die "Go toolchain not found and no prebuilt binary available. Install Go 1.22+ from https://go.dev/dl/ and re-run."
+        Remove-Item $Engine -Force -ErrorAction SilentlyContinue
+        Die "Go toolchain not found and no verified prebuilt binary available for v$Version. Install Go 1.26+ from https://go.dev/dl/ and re-run, or set `$env:SEO_ENGINE_VERSION to a release that publishes this platform."
+    } finally {
+        Remove-Item $tempSums -Force -ErrorAction SilentlyContinue
     }
 }
 

@@ -6,18 +6,66 @@ on:
   pull_request:
     branches: [ main ]
 
+permissions:
+  contents: read
+
 jobs:
+  version-consistency:
+    name: Version Consistency
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Check that all version strings agree
+        run: |
+          set -euo pipefail
+          main_go=$(sed -n 's/^var Version = "\([^"]*\)"/\1/p' cmd/seo-engine/main.go)
+          plugin=$(jq -r .version plugin.json)
+          marketplace=$(jq -r .version marketplace.json)
+          docs=$(grep -oP '(?<=\*\*Version\*\* \| `)[^`]+' docs/MARKETPLACE_SUBMISSION.md)
+          install_sh=$(sed -n 's/^SEO_ENGINE_DEFAULT_VERSION="\([^"]*\)"/\1/p' install.sh)
+          install_ps1=$(sed -n 's/^\$SeoEngineDefaultVersion = "\([^"]*\)"/\1/p' install.ps1)
+
+          echo "cmd/seo-engine/main.go:            $main_go"
+          echo "plugin.json:                       $plugin"
+          echo "marketplace.json:                  $marketplace"
+          echo "docs/MARKETPLACE_SUBMISSION.md:     $docs"
+          echo "install.sh:                        $install_sh"
+          echo "install.ps1:                        $install_ps1"
+
+          fail=0
+          for pair in "plugin.json:$plugin" "marketplace.json:$marketplace" "docs/MARKETPLACE_SUBMISSION.md:$docs" "install.sh:$install_sh" "install.ps1:$install_ps1"; do
+            name="${pair%%:*}"
+            value="${pair#*:}"
+            if [ -z "$value" ]; then
+              echo "::error::could not extract a version from $name"
+              fail=1
+              continue
+            fi
+            if [ "$value" != "$main_go" ]; then
+              echo "::error::version mismatch: cmd/seo-engine/main.go has $main_go but $name has $value"
+              fail=1
+            fi
+          done
+          if [ -z "$main_go" ]; then
+            echo "::error::could not extract Version from cmd/seo-engine/main.go"
+            fail=1
+          fi
+          [ "$fail" -eq 0 ] || exit 1
+          echo "All version strings agree: $main_go"
+
   test:
     name: Unit & Integration Tests
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
-          go-version: '1.22'
+          go-version: '1.26'
           check-latest: true
 
       - name: Verify Dependencies
@@ -47,12 +95,12 @@ jobs:
             goarch: amd64
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
-          go-version: '1.22'
+          go-version: '1.26'
           check-latest: true
 
       - name: Build Binary

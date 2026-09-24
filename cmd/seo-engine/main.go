@@ -8,11 +8,15 @@ import (
 	"strings"
 )
 
-const Version = "2.1.0"
+// Version is the engine's release version. It defaults to the value below
+// for `go run`/plain `go build`, and is overridden at release-build time via
+// `-ldflags "-X main.Version=..."` (see .github/workflows/release.yml and
+// install.sh/install.ps1) so a single source of truth drives the binary.
+var Version = "2.1.0"
 
 func printUsage() {
 	fmt.Printf(`Antigravity SEO Engine v%s
-High-speed, zero-dependency SEO & GEO audit engine.
+High-speed, small pure-Go SEO & GEO audit engine.
 
 USAGE:
   seo-engine <command> [options] <url>
@@ -32,7 +36,7 @@ SITE COMMANDS:
   sitemap     Analyze a sitemap URL — or generate one: sitemap generate <url>
   robots      Inspect robots.txt directives and AI crawler access policies
   drift       Page-change monitoring: drift baseline|compare|history <url>
-  backlinks   Explore open Common Crawl link graph and domain captures (keyless)
+  backlinks   Explore the domain's own Common Crawl capture index (keyless)
 
 INTEGRATION COMMANDS (optional API keys / credentials):
   gsc         Google Search Console (query search analytics, inspect URL indexation)
@@ -48,7 +52,8 @@ OPS COMMANDS:
 
 OPTIONS:
   --json      Output results in machine-readable JSON format (default: human-readable)
-  --pdf       (report) Render native PDF directly via WeasyPrint or Chromium
+  --pdf       (report) Render a native A4 PDF directly (pure Go, embedded font
+              covering Latin + Japanese; no WeasyPrint/Chromium dependency)
   --out       (report, sitemap) Output file path
   --limit     Number of URLs to check in sitemaps (default: 10, max: 100)
   --timeout   Request timeout in seconds (default: 15)
@@ -74,7 +79,7 @@ func main() {
 
 	switch command {
 	case "version", "-v", "--version":
-		fmt.Printf("seo-engine version %s\n", Version)
+		runVersionCmd(os.Args[2:])
 		return
 
 	case "headers":
@@ -145,6 +150,17 @@ func main() {
 		printUsage()
 		os.Exit(1)
 	}
+}
+
+func runVersionCmd(args []string) {
+	fs := flag.NewFlagSet("version", flag.ExitOnError)
+	asJSON := fs.Bool("json", false, "Output JSON")
+	parseFlags(fs, args)
+	if *asJSON {
+		outputJSON(map[string]string{"version": Version})
+		return
+	}
+	fmt.Printf("seo-engine version %s\n", Version)
 }
 
 func normalizeURL(raw string) string {

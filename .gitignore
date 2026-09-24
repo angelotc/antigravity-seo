@@ -1,0 +1,18 @@
+# Build output
+/bin/
+/dist/
+
+# OS junk
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Editor junk
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+/seo-engine
+/seo-engine.exe

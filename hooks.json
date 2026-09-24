@@ -2,7 +2,7 @@
   "seo-schema-lint": {
     "PostToolUse": [
       {
-        "matcher": "write_to_file|replace_file_content",
+        "matcher": "write_to_file|replace_file_content|Write|Edit|MultiEdit|write|edit",
         "hooks": [
           {
             "type": "command",
