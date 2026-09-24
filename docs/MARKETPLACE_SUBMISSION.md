@@ -44,8 +44,8 @@ When Google opens public submissions or developer partner onboarding for the Ant
 1. Provide the repository URL: `https://github.com/angelotc/antigravity-seo.git`
 2. Point to the verified [`plugin.json`](../plugin.json) and [`marketplace.json`](../marketplace.json).
 3. Specify the runtime contract:
-   - Zero external system dependencies (pure Go binary).
-   - Compliant PostToolUse schema linting hook (`hooks.json`).
+   - Small pure-Go binary (deps: `golang.org/x/net`, `golang.org/x/text`, `github.com/go-pdf/fpdf`); no Python/Playwright runtime or external PDF renderer.
+   - Compliant PostToolUse schema linting hook (`hooks.json`), bash-wired by default — see the README's "Hooks" section for the Windows/PowerShell caveat.
    - Native integration with Antigravity tools (`search_web`, `read_url_content`).
 
 ### B. Community Registries (`awesome-antigravity`, etc.)

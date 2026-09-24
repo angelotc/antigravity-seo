@@ -94,7 +94,7 @@ Generate an interactive Markdown Artifact in this conversation's artifact direct
      ```bash
      seo-engine report <URL> --pdf --out seo-audit-report.pdf
      ```
-   * Or inspect keyless backlink graphs and first-party search analytics:
+   * Or inspect the domain's own Common Crawl capture index (keyless) and first-party search analytics:
      ```bash
      seo-engine backlinks <domain> --limit 50 --json
      seo-engine gsc query sc-domain:<domain> --dimensions query,page --limit 25

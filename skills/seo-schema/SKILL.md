@@ -100,4 +100,4 @@ seo-engine schema <URL> --json
 ```
 The engine validates required properties for Article, Product (incl. `offers.price`/`priceCurrency`), BreadcrumbList, FAQPage, Organization, LocalBusiness (address, telephone), Event, VideoObject, Recipe, JobPosting, Course, Person, WebSite, and RealEstateListing; flags deprecated types (HowTo, SpecialAnnouncement, ClaimReview, VehicleListing, EstimatedSalary, LearningVideo, CourseInfo) and placeholder values. Ensure zero errors before deploying.
 
-New files written through the Antigravity plugin are additionally gated by the PostToolUse lint hook (`hooks/schema_linter.sh`, `hooks/schema_linter.ps1` on Windows), which blocks placeholder values and deprecated types at edit time.
+New files written through the Antigravity plugin, Claude Code, or OpenCode are additionally gated by the PostToolUse lint hook (`hooks/schema_linter.sh`), which blocks placeholder values and deprecated types at edit time. Windows users need to manually wire `hooks/schema_linter.ps1` into `hooks.json` — it is not registered automatically; see the README's "Hooks" section for the exact edit.

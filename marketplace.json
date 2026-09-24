@@ -2,7 +2,7 @@
   "name": "antigravity-seo",
   "displayName": "Antigravity SEO & GEO Suite",
   "version": "2.1.0",
-  "description": "Complete SEO and Generative Engine Optimization (GEO) suite powered by Go. 21 skills, zero-dependency Go engine, native Google search grounding, and automated JSON-LD schema linting.",
+  "description": "Complete SEO and Generative Engine Optimization (GEO) suite powered by Go. 21 skills, a small pure-Go engine, native Google search grounding, and automated JSON-LD schema linting.",
   "author": {
     "name": "angelotc",
     "url": "https://github.com/angelotc"
