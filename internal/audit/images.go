@@ -10,20 +10,20 @@ import (
 
 // ImageAuditReport evaluates image optimization for SEO and CLS prevention
 type ImageAuditReport struct {
-	URL                 string       `json:"url"`
-	TotalImages         int          `json:"total_images"`
-	MissingAlt          int          `json:"missing_alt"`
-	EmptyAltDecorative  int          `json:"empty_alt_decorative"`
-	LongAlt             int          `json:"long_alt"`
-	MissingDimensions   int          `json:"missing_dimensions"`
-	LazyLoaded          int          `json:"lazy_loaded"`
-	ModernFormats       int          `json:"modern_formats"` // webp / avif
-	LegacyFormats       int          `json:"legacy_formats"` // jpg / png / gif
-	InsecureHTTP        int          `json:"insecure_http"`
-	DataURI             int          `json:"data_uri"`
-	OversizedDataURI    int          `json:"oversized_data_uri"` // > 10KB inlined
-	Score               int          `json:"score"`
-	Issues              []AuditIssue `json:"issues"`
+	URL                string       `json:"url"`
+	TotalImages        int          `json:"total_images"`
+	MissingAlt         int          `json:"missing_alt"`
+	EmptyAltDecorative int          `json:"empty_alt_decorative"`
+	LongAlt            int          `json:"long_alt"`
+	MissingDimensions  int          `json:"missing_dimensions"`
+	LazyLoaded         int          `json:"lazy_loaded"`
+	ModernFormats      int          `json:"modern_formats"` // webp / avif
+	LegacyFormats      int          `json:"legacy_formats"` // jpg / png / gif
+	InsecureHTTP       int          `json:"insecure_http"`
+	DataURI            int          `json:"data_uri"`
+	OversizedDataURI   int          `json:"oversized_data_uri"` // > 10KB inlined
+	Score              int          `json:"score"`
+	Issues             []AuditIssue `json:"issues"`
 }
 
 // InspectImages audits every <img> element for SEO-relevant attributes
@@ -133,7 +133,7 @@ func InspectImages(pageURL string, rawHTML []byte) (*ImageAuditReport, error) {
 		report.Issues = append(report.Issues, AuditIssue{
 			Severity: SeverityWarning, Category: "Images",
 			Message: fmt.Sprintf("%d images missing width/height attributes (CLS risk)", report.MissingDimensions),
-			Details:  "Explicit dimensions let the browser reserve layout space and prevent cumulative layout shift.",
+			Details: "Explicit dimensions let the browser reserve layout space and prevent cumulative layout shift.",
 		})
 		report.Score -= minInt(report.MissingDimensions*3, 15)
 	}

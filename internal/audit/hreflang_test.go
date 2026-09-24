@@ -59,6 +59,33 @@ func TestInspectHreflangInvalidCode(t *testing.T) {
 	}
 }
 
+func TestInspectHreflangRelativeSelfRef(t *testing.T) {
+	html := []byte(`<link rel="alternate" hreflang="en" href="/en/page?utm_source=x">`)
+	report, err := InspectHreflang("https://example.com/en/page", html)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !report.HasSelfRef {
+		t.Error("relative href (with a stripped utm_ param) resolving to the page URL should count as self-reference")
+	}
+}
+
+func TestInspectHreflangSortedOutput(t *testing.T) {
+	html := []byte(`
+<link rel="alternate" hreflang="zz-bad" href="https://example.com/a">
+<link rel="alternate" hreflang="aa-bad" href="https://example.com/b">
+<link rel="alternate" hreflang="en" href="https://example.com/c">
+<link rel="alternate" hreflang="en" href="https://example.com/d">
+`)
+	report, err := InspectHreflang("https://example.com", html)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(report.InvalidCodes) != 2 || report.InvalidCodes[0] != "aa-bad" || report.InvalidCodes[1] != "zz-bad" {
+		t.Errorf("expected sorted invalid codes [aa-bad zz-bad], got %v", report.InvalidCodes)
+	}
+}
+
 func TestInspectHreflangNone(t *testing.T) {
 	report, err := InspectHreflang("https://example.com", []byte("<html><body></body></html>"))
 	if err != nil {

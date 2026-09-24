@@ -14,13 +14,13 @@ const MaxLintFileBytes = 10 * 1024 * 1024
 
 // deprecatedSchemaTypes no longer earn Google rich results and should not be emitted
 var deprecatedSchemaTypes = map[string]bool{
-	"HowTo":             true,
+	"HowTo":               true,
 	"SpecialAnnouncement": true,
-	"ClaimReview":       true,
-	"VehicleListing":    true,
-	"EstimatedSalary":   true,
-	"LearningVideo":     true,
-	"CourseInfo":        true,
+	"ClaimReview":         true,
+	"VehicleListing":      true,
+	"EstimatedSalary":     true,
+	"LearningVideo":       true,
+	"CourseInfo":          true,
 }
 
 var placeholderPatterns = []*regexp.Regexp{

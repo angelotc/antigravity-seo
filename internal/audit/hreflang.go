@@ -3,10 +3,14 @@ package audit
 import (
 	"bytes"
 	"fmt"
+	"net/url"
 	"regexp"
+	"sort"
 	"strings"
 
 	"golang.org/x/net/html"
+
+	"antigravity-seo/internal/urlnorm"
 )
 
 // HreflangAlternate is one <link rel="alternate" hreflang="..."> entry
@@ -19,16 +23,16 @@ type HreflangAlternate struct {
 
 // HreflangAuditReport evaluates international targeting annotations
 type HreflangAuditReport struct {
-	URL             string              `json:"url"`
-	Alternates      []HreflangAlternate `json:"alternates"`
-	Count           int                 `json:"count"`
-	InvalidCodes    []string            `json:"invalid_codes,omitempty"`
-	Duplicates      []string            `json:"duplicates,omitempty"`
-	HasXDefault     bool                `json:"has_x_default"`
-	HasSelfRef      bool                `json:"has_self_reference"`
-	Languages       []string            `json:"languages"`
-	Score           int                 `json:"score"`
-	Issues          []AuditIssue        `json:"issues"`
+	URL          string              `json:"url"`
+	Alternates   []HreflangAlternate `json:"alternates"`
+	Count        int                 `json:"count"`
+	InvalidCodes []string            `json:"invalid_codes,omitempty"`
+	Duplicates   []string            `json:"duplicates,omitempty"`
+	HasXDefault  bool                `json:"has_x_default"`
+	HasSelfRef   bool                `json:"has_self_reference"`
+	Languages    []string            `json:"languages"`
+	Score        int                 `json:"score"`
+	Issues       []AuditIssue        `json:"issues"`
 }
 
 // BCP47-ish language tag: 2-3 letter language, optional script (4) or region (2 | 3-digit)
@@ -42,11 +46,11 @@ func InspectHreflang(pageURL string, rawHTML []byte) (*HreflangAuditReport, erro
 	}
 
 	report := &HreflangAuditReport{
-		URL:         pageURL,
-		Alternates:  []HreflangAlternate{},
-		Languages:   []string{},
-		Score:       100,
-		Issues:      []AuditIssue{},
+		URL:        pageURL,
+		Alternates: []HreflangAlternate{},
+		Languages:  []string{},
+		Score:      100,
+		Issues:     []AuditIssue{},
 	}
 
 	var walk func(*html.Node)
@@ -92,7 +96,7 @@ func InspectHreflang(pageURL string, rawHTML []byte) (*HreflangAuditReport, erro
 
 	// Duplicates and self-reference
 	seen := map[string]int{}
-	selfPath := strings.TrimRight(pageURL, "/")
+	baseURL, _ := url.Parse(pageURL)
 	for _, alt := range report.Alternates {
 		seen[alt.Hreflang]++
 		if strings.EqualFold(alt.Hreflang, "x-default") {
@@ -103,7 +107,7 @@ func InspectHreflang(pageURL string, rawHTML []byte) (*HreflangAuditReport, erro
 				report.Languages = append(report.Languages, lang)
 			}
 		}
-		if strings.TrimRight(alt.Href, "/") == selfPath {
+		if alt.Href != "" && urlnorm.Same(alt.Href, pageURL, baseURL) {
 			report.HasSelfRef = true
 		}
 	}
@@ -115,6 +119,8 @@ func InspectHreflang(pageURL string, rawHTML []byte) (*HreflangAuditReport, erro
 			report.InvalidCodes = append(report.InvalidCodes, code)
 		}
 	}
+	sort.Strings(report.Duplicates)
+	sort.Strings(report.InvalidCodes)
 
 	if len(report.InvalidCodes) > 0 {
 		report.Issues = append(report.Issues, AuditIssue{

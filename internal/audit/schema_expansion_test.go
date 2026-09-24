@@ -66,6 +66,48 @@ func TestSchemaPlaceholderError(t *testing.T) {
 	}
 }
 
+func TestSchemaPlaceholderCountedOncePerBlockNotPerType(t *testing.T) {
+	// Multi-@type block: placeholder should be flagged once, not once per
+	// type name.
+	html := []byte(`<script type="application/ld+json">
+{"@context":"https://schema.org","@type":["Product","SomeOtherType"],"name":"REPLACE_WITH_NAME"}
+</script>`)
+	report := InspectSchema("https://example.com", html)
+	if len(report.Blocks) != 1 {
+		t.Fatalf("expected 1 block, got %d", len(report.Blocks))
+	}
+	placeholderErrs := 0
+	for _, e := range report.Blocks[0].Errors {
+		if strings.Contains(e, "placeholder") {
+			placeholderErrs++
+		}
+	}
+	if placeholderErrs != 1 {
+		t.Errorf("expected exactly 1 placeholder error for a 2-type block, got %d: %v", placeholderErrs, report.Blocks[0].Errors)
+	}
+}
+
+func TestSchemaOffersArray(t *testing.T) {
+	html := []byte(`<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"Product","name":"Sofa","image":"https://x/i.jpg","offers":[
+  {"@type":"Offer","price":"199.99","priceCurrency":"USD"},
+  {"@type":"Offer","availability":"https://schema.org/InStock"}
+]}
+</script>`)
+	report := InspectSchema("https://example.com", html)
+	found := false
+	for _, b := range report.Blocks {
+		for _, w := range b.Warnings {
+			if strings.Contains(w, "offers") {
+				found = true
+			}
+		}
+	}
+	if !found {
+		t.Error("second offer in the array (missing price/priceCurrency) should warn even though the first is complete")
+	}
+}
+
 func TestSchemaProductOffersDetail(t *testing.T) {
 	html := []byte(`<script type="application/ld+json">
 {"@context":"https://schema.org","@type":"Product","name":"Sofa","image":"https://x/i.jpg","offers":{"@type":"Offer","availability":"https://schema.org/InStock"}}

@@ -12,17 +12,17 @@ import (
 
 // LLMSTxtReport audits /llms.txt and /llms-full.txt availability and shape
 type LLMSTxtReport struct {
-	Domain         string       `json:"domain"`
-	LLMSTxtExists  bool         `json:"llms_txt_exists"`
-	LLMSTxtStatus  int          `json:"llms_txt_status"`
-	LLMSTxtBytes   int          `json:"llms_txt_bytes"`
-	LLMSTxtLinks   int          `json:"llms_txt_links"`
-	LLMSTxtSections int         `json:"llms_txt_sections"`
-	FullTxtExists  bool         `json:"full_txt_exists"`
-	FullTxtStatus  int          `json:"full_txt_status"`
-	FullTxtBytes   int          `json:"full_txt_bytes"`
-	Score          int          `json:"score"`
-	Issues         []AuditIssue `json:"issues"`
+	Domain          string       `json:"domain"`
+	LLMSTxtExists   bool         `json:"llms_txt_exists"`
+	LLMSTxtStatus   int          `json:"llms_txt_status"`
+	LLMSTxtBytes    int          `json:"llms_txt_bytes"`
+	LLMSTxtLinks    int          `json:"llms_txt_links"`
+	LLMSTxtSections int          `json:"llms_txt_sections"`
+	FullTxtExists   bool         `json:"full_txt_exists"`
+	FullTxtStatus   int          `json:"full_txt_status"`
+	FullTxtBytes    int          `json:"full_txt_bytes"`
+	Score           int          `json:"score"`
+	Issues          []AuditIssue `json:"issues"`
 }
 
 var mdLinkRe = regexp.MustCompile(`\[[^\]]+\]\((https?://[^)\s]+)\)`)

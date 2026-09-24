@@ -5,3 +5,5 @@ go 1.26.0
 require golang.org/x/net v0.59.0
 
 require github.com/go-pdf/fpdf v0.9.0
+
+require golang.org/x/text v0.42.0

@@ -29,24 +29,24 @@ type AuditIssue struct {
 
 // HeaderAuditResult provides a complete SEO evaluation of HTTP transport headers
 type HeaderAuditResult struct {
-	URL             string              `json:"url"`
-	FinalURL        string              `json:"final_url"`
-	StatusCode      int                 `json:"status_code"`
-	IsSuccess       bool                `json:"is_success"`
-	IsRedirected    bool                `json:"is_redirected"`
-	RedirectHops    int                 `json:"redirect_hops"`
+	URL             string                `json:"url"`
+	FinalURL        string                `json:"final_url"`
+	StatusCode      int                   `json:"status_code"`
+	IsSuccess       bool                  `json:"is_success"`
+	IsRedirected    bool                  `json:"is_redirected"`
+	RedirectHops    int                   `json:"redirect_hops"`
 	RedirectChain   []crawler.RedirectHop `json:"redirect_chain,omitempty"`
-	XRobotsTag      string              `json:"x_robots_tag,omitempty"`
-	HasNoindex      bool                `json:"has_noindex"`
-	HasNofollow     bool                `json:"has_nofollow"`
-	HeaderCanonical string              `json:"header_canonical,omitempty"`
-	ContentEncoding string              `json:"content_encoding,omitempty"`
-	CacheControl    string              `json:"cache_control,omitempty"`
-	HSTS            bool                `json:"has_hsts"`
-	Server          string              `json:"server,omitempty"`
-	TTFBMS          int64               `json:"ttfb_ms"`
-	TotalDurationMS int64               `json:"total_duration_ms"`
-	Issues          []AuditIssue        `json:"issues"`
+	XRobotsTag      string                `json:"x_robots_tag,omitempty"`
+	HasNoindex      bool                  `json:"has_noindex"`
+	HasNofollow     bool                  `json:"has_nofollow"`
+	HeaderCanonical string                `json:"header_canonical,omitempty"`
+	ContentEncoding string                `json:"content_encoding,omitempty"`
+	CacheControl    string                `json:"cache_control,omitempty"`
+	HSTS            bool                  `json:"has_hsts"`
+	Server          string                `json:"server,omitempty"`
+	TTFBMS          int64                 `json:"ttfb_ms"`
+	TotalDurationMS int64                 `json:"total_duration_ms"`
+	Issues          []AuditIssue          `json:"issues"`
 }
 
 // InspectHeaders analyzes a FetchResult specifically for HTTP header SEO compliance
@@ -96,6 +96,13 @@ func InspectHeaders(res *crawler.FetchResult) *HeaderAuditResult {
 			Message:  fmt.Sprintf("Server error %d %s", res.StatusCode, res.StatusText),
 			Details:  "Search engine bots will drop or delay indexing during persistent server errors.",
 		})
+	case res.StatusCode >= 400:
+		result.Issues = append(result.Issues, AuditIssue{
+			Severity: SeverityCritical,
+			Category: "Status",
+			Message:  fmt.Sprintf("Page returned %d %s", res.StatusCode, res.StatusText),
+			Details:  "Crawlers cannot index a page that returns a client error. If this is bot protection (401/403/429), verify Googlebot is allowed.",
+		})
 	}
 
 	// 2. Redirect Chain Evaluation
@@ -131,25 +138,58 @@ func InspectHeaders(res *crawler.FetchResult) *HeaderAuditResult {
 		}
 	}
 
-	// 3. X-Robots-Tag Inspection
+	// 3. X-Robots-Tag Inspection. A response can carry multiple X-Robots-Tag
+	// header instances (res.Headers["X-Robots-Tag"] is already a []string —
+	// Go's http.Header preserves repeated headers as separate slice
+	// entries), and each instance can itself be a comma-separated directive
+	// list, optionally scoped to one crawler ("googlebot: noindex, nofollow"
+	// vs. a bare "noindex, nofollow" that applies to all crawlers). "none"
+	// is shorthand for "noindex, nofollow" combined.
 	for _, val := range res.Headers["X-Robots-Tag"] {
-		result.XRobotsTag = val
-		lower := strings.ToLower(val)
-		if strings.Contains(lower, "noindex") {
+		if result.XRobotsTag != "" {
+			result.XRobotsTag += ", " + val
+		} else {
+			result.XRobotsTag = val
+		}
+
+		hasNoindex, hasNofollow := false, false
+		for _, part := range strings.Split(val, ",") {
+			directive := strings.ToLower(strings.TrimSpace(part))
+			// A directive may be prefixed with a target user-agent, e.g.
+			// "googlebot: noindex". Only strip the prefix when what
+			// remains is itself a bare recognized directive — this avoids
+			// misparsing a parameterized directive like "max-snippet:-1"
+			// as a user-agent prefix.
+			if idx := strings.LastIndex(directive, ":"); idx != -1 {
+				if rest := strings.TrimSpace(directive[idx+1:]); rest == "noindex" || rest == "nofollow" || rest == "none" {
+					directive = rest
+				}
+			}
+			switch directive {
+			case "none":
+				hasNoindex, hasNofollow = true, true
+			case "noindex":
+				hasNoindex = true
+			case "nofollow":
+				hasNofollow = true
+			}
+		}
+
+		if hasNoindex {
 			result.HasNoindex = true
 			result.Issues = append(result.Issues, AuditIssue{
 				Severity: SeverityCritical,
 				Category: "Indexability",
-				Message:  "X-Robots-Tag contains 'noindex'",
+				Message:  fmt.Sprintf("X-Robots-Tag directive blocks indexing: %q", val),
 				Details:  "This header completely blocks search engines from indexing this page.",
 			})
 		}
-		if strings.Contains(lower, "nofollow") {
+		if hasNofollow {
 			result.HasNofollow = true
 			result.Issues = append(result.Issues, AuditIssue{
 				Severity: SeverityWarning,
 				Category: "Indexability",
-				Message:  "X-Robots-Tag contains 'nofollow'",
+				Message:  fmt.Sprintf("X-Robots-Tag directive blocks link-following: %q", val),
 				Details:  "Search engine crawlers will not follow outgoing links from this URL.",
 			})
 		}

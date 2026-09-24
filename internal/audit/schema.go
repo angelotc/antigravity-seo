@@ -11,14 +11,14 @@ import (
 
 // SchemaBlock represents a single JSON-LD block extracted from a page
 type SchemaBlock struct {
-	RawJSON   string                 `json:"raw_json"`
-	IsValid   bool                   `json:"is_valid"`
-	ParseErr  string                 `json:"parse_error,omitempty"`
-	Context   string                 `json:"context,omitempty"`
-	Types     []string               `json:"types"`
+	RawJSON    string                 `json:"raw_json"`
+	IsValid    bool                   `json:"is_valid"`
+	ParseErr   string                 `json:"parse_error,omitempty"`
+	Context    string                 `json:"context,omitempty"`
+	Types      []string               `json:"types"`
 	ParsedData map[string]interface{} `json:"parsed_data,omitempty"`
-	Warnings  []string               `json:"warnings,omitempty"`
-	Errors    []string               `json:"errors,omitempty"`
+	Warnings   []string               `json:"warnings,omitempty"`
+	Errors     []string               `json:"errors,omitempty"`
 }
 
 // SchemaAuditReport provides a complete evaluation of structured data
@@ -182,15 +182,19 @@ func extractTypesAndValidate(item map[string]interface{}, block *SchemaBlock, re
 				"FAQPage rich results are limited to authoritative government/health sites in most regions")
 		}
 
-		// Block placeholder values that would ship template text to production
-		for _, ph := range findPlaceholders(item, "") {
-			block.Errors = append(block.Errors, fmt.Sprintf(
-				"placeholder value %q left in property '%s'", truncate(ph.value, 60), ph.path))
-			report.Score -= 10
-		}
-
 		// Validate specific Google Rich Result types
 		validateRichResultType(t, item, block, report)
+	}
+
+	// Block placeholder values that would ship template text to production.
+	// This runs once per @type object, not once per type in that object's
+	// @type array — a multi-@type block (e.g. ["Product", "Offer"]) has one
+	// set of properties, so a placeholder in it should only be reported
+	// (and penalized) once, not once per type name.
+	for _, ph := range findPlaceholders(item, "") {
+		block.Errors = append(block.Errors, fmt.Sprintf(
+			"placeholder value %q left in property '%s'", truncate(ph.value, 60), ph.path))
+		report.Score -= 10
 	}
 }
 
@@ -262,19 +266,44 @@ func validateRichResultType(schemaType string, data map[string]interface{}, bloc
 	}
 }
 
-// checkOfferFields validates inline Product.offers price fields
+// checkOfferFields validates Product.offers price fields. offers may be a
+// single Offer/AggregateOffer object, or an array of them (Google allows
+// multiple offers per product) — every entry in the array is validated.
 func checkOfferFields(data map[string]interface{}, block *SchemaBlock, report *SchemaAuditReport) {
-	offers, ok := data["offers"].(map[string]interface{})
-	if !ok {
-		return
+	switch offers := data["offers"].(type) {
+	case map[string]interface{}:
+		checkOneOffer(offers, block, report)
+	case []interface{}:
+		for _, o := range offers {
+			if offer, ok := o.(map[string]interface{}); ok {
+				checkOneOffer(offer, block, report)
+			}
+		}
 	}
-	for _, f := range []string{"price", "priceCurrency"} {
-		if v, present := offers[f]; !present || v == nil || v == "" {
+}
+
+func checkOneOffer(offer map[string]interface{}, block *SchemaBlock, report *SchemaAuditReport) {
+	// AggregateOffer expresses price range via lowPrice/highPrice instead of
+	// a single price; either shape is acceptable.
+	offerType, _ := offer["@type"].(string)
+	priceFields := []string{"price", "priceCurrency"}
+	if offerType == "AggregateOffer" {
+		priceFields = []string{"lowPrice", "priceCurrency"}
+	}
+	for _, f := range priceFields {
+		if v, present := offer[f]; !present || v == nil || v == "" {
 			block.Warnings = append(block.Warnings, fmt.Sprintf(
-				"Product.offers is missing '%s'", f))
+				"%s is missing '%s'", offerLabel(offerType), f))
 			report.Score -= 3
 		}
 	}
+}
+
+func offerLabel(offerType string) string {
+	if offerType == "" {
+		return "Product.offers"
+	}
+	return fmt.Sprintf("Product.offers[@type=%s]", offerType)
 }
 
 func checkRequiredField(data map[string]interface{}, field string, schemaType string, block *SchemaBlock, report *SchemaAuditReport) {
@@ -294,4 +323,3 @@ func containsString(arr []string, target string) bool {
 	}
 	return false
 }
-

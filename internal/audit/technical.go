@@ -7,15 +7,21 @@ import (
 	"strings"
 
 	"golang.org/x/net/html"
+
+	"antigravity-seo/internal/textutil"
+	"antigravity-seo/internal/urlnorm"
 )
 
 // TechnicalAuditReport provides a full on-page DOM evaluation
 type TechnicalAuditReport struct {
 	URL              string       `json:"url"`
 	Title            string       `json:"title"`
-	TitleLength      int          `json:"title_length"`
+	TitleLength      int          `json:"title_length"` // rune count
+	TitleWidth       int          `json:"title_width"`  // textutil.DisplayWidth units
 	MetaDescription  string       `json:"meta_description"`
-	MetaDescLength   int          `json:"meta_description_length"`
+	MetaDescLength   int          `json:"meta_description_length"` // rune count
+	MetaDescWidth    int          `json:"meta_description_width"`  // textutil.DisplayWidth units
+	Script           string       `json:"script"`                  // detected writing system used for length/width thresholds
 	Canonical        string       `json:"canonical"`
 	IsSelfCanonical  bool         `json:"is_self_canonical"`
 	MetaRobots       string       `json:"meta_robots,omitempty"`
@@ -47,13 +53,14 @@ func InspectHTML(pageURL string, rawHTML []byte) (*TechnicalAuditReport, error) 
 	}
 
 	report := &TechnicalAuditReport{
-		URL:      pageURL,
-		H1Text:   make([]string, 0),
-		Score:    100,
-		Issues:   make([]AuditIssue, 0),
+		URL:    pageURL,
+		H1Text: make([]string, 0),
+		Score:  100,
+		Issues: make([]AuditIssue, 0),
 	}
 
 	baseURL, _ := url.Parse(pageURL)
+	normBase, _ := urlnorm.Normalize(pageURL, nil)
 
 	var walk func(*html.Node)
 	walk = func(n *html.Node) {
@@ -68,7 +75,10 @@ func InspectHTML(pageURL string, rawHTML []byte) (*TechnicalAuditReport, error) 
 
 			case "title":
 				if report.Title == "" && n.FirstChild != nil {
-					report.Title = strings.TrimSpace(n.FirstChild.Data)
+					// Concatenate ALL text children, not just the first —
+					// entities/inline markup can split a <title>'s text
+					// into multiple text nodes.
+					report.Title = strings.TrimSpace(nodeText(n))
 				}
 
 			case "meta":
@@ -161,19 +171,32 @@ func InspectHTML(pageURL string, rawHTML []byte) (*TechnicalAuditReport, error) 
 
 			case "a":
 				for _, a := range n.Attr {
-					if strings.ToLower(a.Key) == "href" {
-						linkURL := strings.TrimSpace(a.Val)
-						if strings.HasPrefix(linkURL, "http") {
-							if parsedLink, err := url.Parse(linkURL); err == nil && baseURL != nil {
-								if parsedLink.Host == baseURL.Host {
-									report.InternalLinks++
-								} else {
-									report.ExternalLinks++
-								}
-							}
-						} else if strings.HasPrefix(linkURL, "/") || strings.HasPrefix(linkURL, "#") {
-							report.InternalLinks++
-						}
+					if strings.ToLower(a.Key) != "href" {
+						continue
+					}
+					href := strings.TrimSpace(a.Val)
+					if href == "" {
+						continue
+					}
+					lowerHref := strings.ToLower(href)
+					switch {
+					case strings.HasPrefix(lowerHref, "mailto:"),
+						strings.HasPrefix(lowerHref, "tel:"),
+						strings.HasPrefix(lowerHref, "javascript:"):
+						continue
+					case strings.HasPrefix(href, "#"):
+						// Pure same-page fragment link — not a navigable
+						// internal link.
+						continue
+					}
+					resolved, err := urlnorm.Normalize(href, normBase)
+					if err != nil {
+						continue
+					}
+					if normBase != nil && strings.EqualFold(resolved.Host, normBase.Host) {
+						report.InternalLinks++
+					} else {
+						report.ExternalLinks++
 					}
 				}
 			}
@@ -188,12 +211,19 @@ func InspectHTML(pageURL string, rawHTML []byte) (*TechnicalAuditReport, error) 
 
 	report.TitleLength = len([]rune(report.Title))
 	report.MetaDescLength = len([]rune(report.MetaDescription))
+	report.TitleWidth = textutil.DisplayWidth(report.Title)
+	report.MetaDescWidth = textutil.DisplayWidth(report.MetaDescription)
 
-	// Validate Canonical self-reference
-	if report.Canonical != "" && baseURL != nil {
-		if strings.TrimRight(report.Canonical, "/") == strings.TrimRight(pageURL, "/") {
-			report.IsSelfCanonical = true
-		}
+	// Script drives which meta-description width band applies (see
+	// textutil.MetaDescLimitsFor); classify from the page's textual
+	// metadata since technical.go doesn't walk full body text.
+	script := textutil.ClassifyWithHint(report.Title+" "+report.MetaDescription+" "+strings.Join(report.H1Text, " "), report.Lang)
+	report.Script = script.String()
+
+	// Validate Canonical self-reference: resolves a relative canonical
+	// against the page URL before comparing.
+	if report.Canonical != "" {
+		report.IsSelfCanonical = urlnorm.Same(report.Canonical, pageURL, baseURL)
 	}
 
 	// Score Deductions and Issue Diagnoses
@@ -204,11 +234,12 @@ func InspectHTML(pageURL string, rawHTML []byte) (*TechnicalAuditReport, error) 
 			Message:  "Missing <title> tag",
 		})
 		report.Score -= 20
-	} else if report.TitleLength < 30 || report.TitleLength > 65 {
+	} else if report.TitleWidth < textutil.TitleLimits.Min || report.TitleWidth > textutil.TitleLimits.Max {
 		report.Issues = append(report.Issues, AuditIssue{
 			Severity: SeverityWarning,
 			Category: "Meta",
-			Message:  fmt.Sprintf("<title> length (%d chars) outside recommended 30-65 character range", report.TitleLength),
+			Message: fmt.Sprintf("<title> display width (%d units, %d chars) outside recommended %d-%d unit range (~600px in Google's SERP)",
+				report.TitleWidth, report.TitleLength, textutil.TitleLimits.Min, textutil.TitleLimits.Max),
 		})
 		report.Score -= 5
 	}
@@ -220,12 +251,16 @@ func InspectHTML(pageURL string, rawHTML []byte) (*TechnicalAuditReport, error) 
 			Message:  "Missing meta description tag",
 		})
 		report.Score -= 10
-	} else if report.MetaDescLength < 70 || report.MetaDescLength > 160 {
-		report.Issues = append(report.Issues, AuditIssue{
-			Severity: SeverityInfo,
-			Category: "Meta",
-			Message:  fmt.Sprintf("Meta description length (%d chars) outside recommended 70-160 character range", report.MetaDescLength),
-		})
+	} else {
+		descLimits := textutil.MetaDescLimitsFor(script)
+		if report.MetaDescWidth < descLimits.Min || report.MetaDescWidth > descLimits.Max {
+			report.Issues = append(report.Issues, AuditIssue{
+				Severity: SeverityInfo,
+				Category: "Meta",
+				Message: fmt.Sprintf("Meta description display width (%d units, %d chars) outside recommended %d-%d unit range for %s content",
+					report.MetaDescWidth, report.MetaDescLength, descLimits.Min, descLimits.Max, script),
+			})
+		}
 	}
 
 	if report.HasMetaNoindex {
