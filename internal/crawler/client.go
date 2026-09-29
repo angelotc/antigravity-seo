@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"golang.org/x/net/html/charset"
@@ -290,33 +291,57 @@ func (c *SafeClient) Fetch(ctx context.Context, targetURL string) (*FetchResult,
 			}
 		}
 
+		// The transport may finish a dial in the background after Do returns
+		// (e.g. when an idle connection won the race), so trace callbacks can
+		// run concurrently with the read below; traceMu guards all of it.
 		var (
+			traceMu                                 sync.Mutex
 			dnsStart, tcpStart, tlsStart, ttfbStart time.Time
-			timings                                 FetchTimings
+			traced                                  FetchTimings
 		)
 
 		trace := &httptrace.ClientTrace{
-			DNSStart: func(_ httptrace.DNSStartInfo) { dnsStart = time.Now() },
+			DNSStart: func(_ httptrace.DNSStartInfo) {
+				traceMu.Lock()
+				defer traceMu.Unlock()
+				dnsStart = time.Now()
+			},
 			DNSDone: func(_ httptrace.DNSDoneInfo) {
+				traceMu.Lock()
+				defer traceMu.Unlock()
 				if !dnsStart.IsZero() {
-					timings.DNSLookupMS = time.Since(dnsStart).Milliseconds()
+					traced.DNSLookupMS = time.Since(dnsStart).Milliseconds()
 				}
 			},
-			ConnectStart: func(_, _ string) { tcpStart = time.Now() },
+			ConnectStart: func(_, _ string) {
+				traceMu.Lock()
+				defer traceMu.Unlock()
+				tcpStart = time.Now()
+			},
 			ConnectDone: func(_, _ string, _ error) {
+				traceMu.Lock()
+				defer traceMu.Unlock()
 				if !tcpStart.IsZero() {
-					timings.TCPConnectMS = time.Since(tcpStart).Milliseconds()
+					traced.TCPConnectMS = time.Since(tcpStart).Milliseconds()
 				}
 			},
-			TLSHandshakeStart: func() { tlsStart = time.Now() },
+			TLSHandshakeStart: func() {
+				traceMu.Lock()
+				defer traceMu.Unlock()
+				tlsStart = time.Now()
+			},
 			TLSHandshakeDone: func(_ tls.ConnectionState, _ error) {
+				traceMu.Lock()
+				defer traceMu.Unlock()
 				if !tlsStart.IsZero() {
-					timings.TLSHandshakeMS = time.Since(tlsStart).Milliseconds()
+					traced.TLSHandshakeMS = time.Since(tlsStart).Milliseconds()
 				}
 			},
 			GotFirstResponseByte: func() {
+				traceMu.Lock()
+				defer traceMu.Unlock()
 				if !ttfbStart.IsZero() {
-					timings.TTFBMS = time.Since(ttfbStart).Milliseconds()
+					traced.TTFBMS = time.Since(ttfbStart).Milliseconds()
 				}
 			},
 		}
@@ -330,6 +355,9 @@ func (c *SafeClient) Fetch(ctx context.Context, targetURL string) (*FetchResult,
 			return nil, err
 		}
 
+		traceMu.Lock()
+		timings := traced
+		traceMu.Unlock()
 		timings.TotalMS = time.Since(overallStart).Milliseconds()
 
 		// If redirect (301, 302, 303, 307, 308)
