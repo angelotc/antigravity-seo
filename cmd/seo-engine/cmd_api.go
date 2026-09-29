@@ -89,6 +89,11 @@ func runCruxCmd(args []string) {
 		return
 	}
 
+	if report.NoData {
+		fmt.Printf("No CrUX data for %s — not enough real-user Chrome traffic; try the origin\n", report.OriginOrURL)
+		return
+	}
+
 	fmt.Printf("\n=== CHROME UX REPORT: %s ===\n", report.OriginOrURL)
 	if *formFactor != "" {
 		fmt.Printf("Form factor: %s\n", report.FormFactor)
@@ -106,7 +111,7 @@ func runCruxCmd(args []string) {
 		fmt.Println("\n25-week history (p75 per week, most recent last):")
 		for _, series := range report.History {
 			if len(series.P75s) > 0 {
-				fmt.Printf("  %-6s %s ... %s\n", series.Metric, series.P75s[0], series.P75s[len(series.P75s)-1])
+				fmt.Printf("  %-6s %s ... %s\n", series.Metric, p75Display(series.P75s[0]), p75Display(series.P75s[len(series.P75s)-1]))
 			}
 		}
 		if len(report.CollectionPeriods) > 0 {
@@ -118,6 +123,14 @@ func runCruxCmd(args []string) {
 		}
 	}
 	fmt.Println()
+}
+
+// p75Display renders a history point, using an en dash for periods with no data
+func p75Display(p *string) string {
+	if p == nil {
+		return "–"
+	}
+	return *p
 }
 
 // redactKey hides a secret in --json output, keeping only a short prefix so
@@ -182,6 +195,6 @@ func runIndexNowCmd(args []string) {
 	fmt.Printf("URLs:    %d\n", len(report.URLs))
 	fmt.Printf("Status:  %d %s\n", report.Status, report.StatusText)
 	if !report.Accepted {
-		os.Exit(1)
+		fatal("indexnow submission rejected: %d %s", report.Status, report.StatusText)
 	}
 }

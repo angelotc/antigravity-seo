@@ -15,6 +15,8 @@ import (
 	"net/http"
 	"net/url"
 	"sort"
+	"strconv"
+	"strings"
 	"time"
 )
 
@@ -98,10 +100,10 @@ func RunPSI(ctx context.Context, targetURL, strategy, apiKey string) (*PSIReport
 	q := url.Values{}
 	q.Set("url", targetURL)
 	q.Set("strategy", strategy)
-	q.Set("category", "performance")
-	q.Set("category", "accessibility")
-	q.Set("category", "best-practices")
-	q.Set("category", "seo")
+	q.Add("category", "performance")
+	q.Add("category", "accessibility")
+	q.Add("category", "best-practices")
+	q.Add("category", "seo")
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, PSIEndpoint+"?"+q.Encode(), nil)
 	if err != nil {
@@ -119,7 +121,7 @@ func RunPSI(ctx context.Context, targetURL, strategy, apiKey string) (*PSIReport
 		return nil, err
 	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("PSI API returned %d: %s", resp.StatusCode, truncateFor(string(body), 200))
+		return nil, fmt.Errorf("PSI API returned %d: %s", resp.StatusCode, apiErrorMessage(body))
 	}
 
 	var apiResp psiAPIResponse
@@ -179,8 +181,8 @@ type CrUXMetric struct {
 
 // CrUXMetricSeries is one metric's labeled 25-week p75 time series
 type CrUXMetricSeries struct {
-	Metric string   `json:"metric"`
-	P75s   []string `json:"p75s"` // 25 weekly p75 values, oldest first
+	Metric string    `json:"metric"`
+	P75s   []*string `json:"p75s"` // 25 weekly p75 values, oldest first; null where the period had too little traffic
 }
 
 // CrUXDate is a CrUX collection-period calendar date
@@ -204,6 +206,7 @@ type CrUXReport struct {
 	Metrics           []CrUXMetric           `json:"metrics"`
 	History           []CrUXMetricSeries     `json:"history,omitempty"`            // sorted by metric name
 	CollectionPeriods []CrUXCollectionPeriod `json:"collection_periods,omitempty"` // parallel to each series' P75s, if the API returned them
+	NoData            bool                   `json:"no_data,omitempty"`            // the API has no record (404): not enough real-user traffic
 }
 
 type cruxAPIResponse struct {
@@ -241,7 +244,7 @@ func RunCrUX(ctx context.Context, targetURL, formFactor, apiKey string, history 
 
 	payload := map[string]interface{}{}
 	if isOrigin(targetURL) {
-		payload["origin"] = targetURL
+		payload["origin"] = originOf(targetURL)
 	} else {
 		payload["url"] = targetURL
 	}
@@ -266,8 +269,12 @@ func RunCrUX(ctx context.Context, targetURL, formFactor, apiKey string, history 
 	if err != nil {
 		return nil, err
 	}
+	if resp.StatusCode == http.StatusNotFound {
+		// CrUX answers 404 when it has no record for the URL/origin
+		return &CrUXReport{OriginOrURL: targetURL, FormFactor: formFactor, Metrics: []CrUXMetric{}, NoData: true}, nil
+	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("CrUX API returned %d: %s", resp.StatusCode, truncateFor(string(body), 200))
+		return nil, fmt.Errorf("CrUX API returned %d: %s", resp.StatusCode, apiErrorMessage(body))
 	}
 
 	var apiResp cruxAPIResponse
@@ -290,25 +297,27 @@ func RunCrUX(ctx context.Context, targetURL, formFactor, apiKey string, history 
 		}
 		if history {
 			var ts struct {
-				TimeSeries []struct {
-					P75s []string `json:"p75s"`
-				} `json:"timeSeries"`
+				Percentiles struct {
+					P75s []json.RawMessage `json:"p75s"`
+				} `json:"percentilesTimeseries"`
 			}
-			if err := json.Unmarshal(rawMetric, &ts); err == nil && len(ts.TimeSeries) > 0 {
-				report.History = append(report.History, CrUXMetricSeries{
-					Metric: meta.name, P75s: ts.TimeSeries[0].P75s,
-				})
+			if err := json.Unmarshal(rawMetric, &ts); err == nil && len(ts.Percentiles.P75s) > 0 {
+				series := CrUXMetricSeries{Metric: meta.name, P75s: make([]*string, len(ts.Percentiles.P75s))}
+				for i, v := range ts.Percentiles.P75s {
+					series.P75s[i] = p75String(v)
+				}
+				report.History = append(report.History, series)
 			}
 		} else {
 			var rec struct {
-				Percentiles []struct {
-					P75 string `json:"p75"`
+				Percentiles struct {
+					P75 json.RawMessage `json:"p75"`
 				} `json:"percentiles"`
 			}
-			if err := json.Unmarshal(rawMetric, &rec); err == nil && len(rec.Percentiles) > 0 {
-				report.Metrics = append(report.Metrics, CrUXMetric{
-					Name: meta.name, P75: rec.Percentiles[0].P75, Unit: meta.unit,
-				})
+			if err := json.Unmarshal(rawMetric, &rec); err == nil {
+				if v := p75String(rec.Percentiles.P75); v != nil {
+					report.Metrics = append(report.Metrics, CrUXMetric{Name: meta.name, P75: *v, Unit: meta.unit})
+				}
 			}
 		}
 	}
@@ -404,7 +413,34 @@ func SubmitIndexNow(ctx context.Context, urls []string, key, keyLocation string)
 
 func isOrigin(u string) bool {
 	parsed, err := url.Parse(u)
-	return err == nil && parsed.Path == "" && parsed.RawQuery == ""
+	return err == nil && (parsed.Path == "" || parsed.Path == "/") && parsed.RawQuery == ""
+}
+
+// originOf returns scheme://host with no path or trailing slash
+func originOf(u string) string {
+	parsed, err := url.Parse(u)
+	if err != nil || parsed.Host == "" {
+		return strings.TrimRight(u, "/")
+	}
+	return parsed.Scheme + "://" + parsed.Host
+}
+
+// p75String renders a CrUX p75 that the API sends as a number (ms metrics)
+// or a string (CLS). JSON null or an absent value yields nil.
+func p75String(raw json.RawMessage) *string {
+	if len(raw) == 0 || string(raw) == "null" {
+		return nil
+	}
+	var s string
+	if err := json.Unmarshal(raw, &s); err == nil {
+		return &s
+	}
+	var f float64
+	if err := json.Unmarshal(raw, &f); err != nil {
+		return nil
+	}
+	s = strconv.FormatFloat(f, 'f', -1, 64)
+	return &s
 }
 
 func extractHost(u string) (string, error) {
@@ -413,6 +449,20 @@ func extractHost(u string) (string, error) {
 		return "", fmt.Errorf("cannot determine host from %q", u)
 	}
 	return parsed.Hostname(), nil
+}
+
+// apiErrorMessage extracts the single-line error.message from a Google API
+// error body, falling back to a whitespace-collapsed, truncated body.
+func apiErrorMessage(body []byte) string {
+	var e struct {
+		Error struct {
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if json.Unmarshal(body, &e) == nil && e.Error.Message != "" {
+		return truncateFor(strings.Join(strings.Fields(e.Error.Message), " "), 200)
+	}
+	return truncateFor(strings.Join(strings.Fields(string(body)), " "), 200)
 }
 
 func truncateFor(s string, n int) string {
