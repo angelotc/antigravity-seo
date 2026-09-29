@@ -26,7 +26,7 @@ set -euo pipefail
 
 # Keep in lockstep with plugin.json / marketplace.json / cmd/seo-engine/main.go
 # — the CI version-consistency check fails the build if these drift apart.
-SEO_ENGINE_DEFAULT_VERSION="2.1.0"
+SEO_ENGINE_DEFAULT_VERSION="2.2.0"
 
 REPO_URL="https://github.com/angelotc/antigravity-seo.git"
 INSTALL_DIR="${INSTALL_DIR:-$HOME/.gemini/config/plugins}"

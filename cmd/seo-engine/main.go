@@ -15,7 +15,7 @@ import (
 // for `go run`/plain `go build`, and is overridden at release-build time via
 // `-ldflags "-X main.Version=..."` (see .github/workflows/release.yml and
 // install.sh/install.ps1) so a single source of truth drives the binary.
-var Version = "2.1.0"
+var Version = "2.2.0"
 
 func printUsage() { printUsageTo(os.Stdout) }
 

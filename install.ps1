@@ -24,7 +24,7 @@ $ErrorActionPreference = "Stop"
 
 # Keep in lockstep with plugin.json / marketplace.json / cmd/seo-engine/main.go
 # -- the CI version-consistency check fails the build if these drift apart.
-$SeoEngineDefaultVersion = "2.1.0"
+$SeoEngineDefaultVersion = "2.2.0"
 
 $RepoUrl = "https://github.com/angelotc/antigravity-seo.git"
 $InstallDir = if ($env:INSTALL_DIR) { $env:INSTALL_DIR } else { Join-Path $env:USERPROFILE ".gemini\config\plugins" }

@@ -10,7 +10,7 @@ This guide documents the submission package and instructions for listing `antigr
 |---|---|
 | **Plugin ID** | `antigravity-seo` |
 | **Display Name** | Antigravity SEO & GEO Suite |
-| **Version** | `2.1.0` |
+| **Version** | `2.2.0` |
 | **License** | MIT |
 | **Repository** | `https://github.com/angelotc/antigravity-seo` |
 | **Manifest** | [`plugin.json`](../plugin.json) |

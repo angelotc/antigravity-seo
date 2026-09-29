@@ -62,7 +62,7 @@ Installs the plugin to `~/.gemini/config/plugins/antigravity-seo` and symlinks `
 By default the installer fetches a pinned release version (matching this checkout's `plugin.json`) rather than `releases/latest`, and verifies the downloaded binary's SHA256 against that release's `SHA256SUMS.txt` before installing it — the install aborts on a checksum mismatch. Override the version with `SEO_ENGINE_VERSION` (`$env:SEO_ENGINE_VERSION` on Windows):
 
 ```bash
-SEO_ENGINE_VERSION=2.1.0 bash install.sh
+SEO_ENGINE_VERSION=2.2.0 bash install.sh
 ```
 
 ### Install from Source

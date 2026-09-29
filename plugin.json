@@ -1,5 +1,5 @@
 {
   "name": "antigravity-seo",
-  "version": "2.1.0",
+  "version": "2.2.0",
   "description": "Google Antigravity SEO & GEO Suite. Pure Go engine with 21 skills: technical/page audits, JSON-LD schema validation with PostToolUse lint hook, content/E-E-A-T analysis, native A4 PDF reports, sitemap generation, robots policy, drift tracking, and Google Search Console integration."
 }
