@@ -93,7 +93,8 @@ seo-engine doctor
 | `content <url>` | Word count, headings, E-E-A-T signals, answer blocks |
 | `hreflang <url>` | BCP47 codes, x-default, self-reference, duplicates |
 | `llms <url>` | `/llms.txt` and `/llms-full.txt` AI discovery audit |
-| `sitemap <url>` | Sitemap validation (or `sitemap generate <url>`) |
+| `crawl <url>` | Site-wide crawl audit: broken links, redirects, duplicate titles/content, canonicals, hreflang reciprocity, sitemap coverage and orphans (`--max-pages`, `--fail-on`) |
+| `sitemap <url>` | Sitemap validation: follows sitemap indexes, auto-discovers from a site root, samples URLs across child sitemaps (or `sitemap generate <url>`) |
 | `robots <url>` | Robots.txt directives and AI crawler access policies |
 | `drift <url>` | Change monitoring: `baseline`, `compare`, `history` |
 | `backlinks <domain>` | Free Common Crawl capture index — the domain's own archived URLs, not inbound links |
@@ -101,7 +102,9 @@ seo-engine doctor
 | `psi <url>` / `crux <url>` | PageSpeed Insights and Chrome UX Report field data |
 | `indexnow <url...>` | Instant submission to Bing, Yandex, Seznam, and Naver |
 
-All commands support `--json`. Core audit features are 100% keyless.
+All commands support `--json`; with it, errors are also JSON on stdout (`{"error":{"command","message","hint"}}`). Core audit features are 100% keyless.
+
+**Exit codes** (for CI gating with `--fail-on critical|warning` on `headers`, `audit`, `page`, `report`, `schema`, `images`, `content`, `hreflang`, `crawl`, and `drift compare --fail-on change`): `0` success · `1` error · `2` invalid flag · `3` `--fail-on` threshold met.
 
 ---
 
@@ -118,7 +121,7 @@ The plugin also includes a **PostToolUse schema hook** — see [Hooks](#hooks) b
 
 ## Hooks
 
-`hooks.json` registers a PostToolUse schema quality gate (`hooks/schema_linter.sh`) that validates JSON-LD on file writes: it **blocks** (exit 2) placeholder values and deprecated schema types, and **warns** on invalid JSON or a missing `@context`/`@type`. The hook's `matcher` fires on Antigravity's own write tools (`write_to_file`, `replace_file_content`) as well as Claude Code's (`Write`, `Edit`, `MultiEdit`) and OpenCode's (`write`, `edit`), so it runs unmodified in any of those three harnesses. It never blocks an edit because of an engine problem — a missing, wrong-arch, or crashing `seo-engine` binary always falls through to `{}` / exit 0.
+`hooks.json` registers a PostToolUse schema quality gate (`hooks/schema_linter.sh`) that validates JSON-LD on file writes: it **blocks** (exit 2) placeholder values and deprecated schema types, and **warns** on invalid JSON or a missing `@context`/`@type`. The hook's `matcher` fires on Antigravity's file-write tools (`write_to_file`, `replace_file_content`, `multi_replace_file_content`). It never blocks an edit because of an engine problem — a missing, wrong-arch, or crashing `seo-engine` binary always falls through to `{}` / exit 0.
 
 **Windows**: `hooks.json` has no field for an OS-specific command, so it always shells out to the bash script above. A `hooks/schema_linter.ps1` counterpart ships with the same contract but is **not wired in automatically** — if your shell can't run Bash (no WSL/Git Bash on `PATH`), edit `hooks.json` and repoint `command` at it:
 
@@ -139,19 +142,9 @@ The engine measures and audits pages on their own terms instead of assuming spac
 
 ---
 
-## Universal Shell / CLI Integration
+## Antigravity Integration
 
-The engine and skills run 100% natively via standard shell execution (`seo-engine <command> [options] <url> --json`) with zero MCP middleware. Simply ensure `seo-engine` is in your `$PATH` (or run `install.sh`).
-
-- **Antigravity**: Native execution via `run_command`
-- **OpenCode**: Register skills path in `opencode.json`:
-  ```json
-  "skills": {
-    "paths": ["~/.gemini/config/plugins/antigravity-seo/skills"]
-  }
-  ```
-- **Claude Code**: Symlink or copy skills into `~/.claude/skills/`
-- **Codex / Cursor / Aider**: Invoke `seo-engine` directly via the terminal / bash tool
+This plugin targets **Google Antigravity** only. Skills drive the engine through Antigravity's `run_command` (`seo-engine <command> [options] <url> --json`) with no MCP middleware, and ground SERP/page research in Antigravity's native `search_web` and `read_url_content` tools. The installer puts `seo-engine` on your `PATH`.
 
 ---
 
@@ -162,7 +155,7 @@ The engine and skills run 100% natively via standard shell execution (`seo-engin
 | Runtime & Doctor | ✅ Pure Go runtime; zero Python venv |
 | Audits (Technical, Schema, Content, Images, Hreflang) | ✅ Fast engine commands + 21 specialized skills |
 | Sitemap Generator | ✅ Built-in crawler: `sitemap generate` |
-| Schema Quality Gate | ✅ PostToolUse hook, wired for bash (Antigravity/Claude Code/OpenCode); PowerShell script ships but needs manual wiring on Windows |
+| Schema Quality Gate | ✅ PostToolUse hook on Antigravity's write tools (bash); PowerShell script ships but needs manual wiring on Windows |
 | Drift Tracking | ✅ Dependency-free JSON snapshot store (no SQLite) |
 | Search Console (GSC) | ✅ Native RSA JWT service account exchange |
 | Backlink Analysis | ✅ Free Common Crawl CDX index query |
