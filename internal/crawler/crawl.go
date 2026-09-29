@@ -5,6 +5,7 @@ import (
 	"context"
 	"net/http"
 	"net/url"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -34,15 +35,135 @@ type CrawlReport struct {
 	DurationMS int64         `json:"duration_ms"`
 }
 
+const (
+	crawlPagesDefault       = 100
+	crawlConcurrencyDefault = 8
+	crawlMaxRobotsBlocked   = 200
+)
+
+// CrawlOptions tunes a bounded same-origin crawl
+type CrawlOptions struct {
+	MaxPages    int // fetch budget (<=0 -> 100)
+	Concurrency int // workers (<=0 -> 8); forced to 1 when robots.txt sets Crawl-delay
+	// Visit, if set, is called once per fetched URL (any status, or a fetch error) from a
+	// worker goroutine; it must be safe for concurrent use. v.Result.Body is only valid during the call.
+	Visit func(v *CrawlVisit)
+}
+
+// CrawlVisit describes one fetched URL, handed to CrawlOptions.Visit
+type CrawlVisit struct {
+	URL    string       // normalized URL that was requested
+	Depth  int          // clicks from the start URL (start = 0)
+	Result *FetchResult // nil when Err != nil
+	Err    error
+	// Same-origin, normalized, de-duplicated outlinks found on this page
+	// (before robots/path filtering); nil for non-200 or off-origin.
+	Links   []string
+	Title   string
+	Noindex bool // meta robots or X-Robots-Tag noindex/none
+}
+
+// CrawlResult summarizes a crawl run; per-page data goes through Visit
+type CrawlResult struct {
+	StartURL      string
+	Visited       int
+	Truncated     bool     // budget ran out while discovered URLs were still unfetched
+	RobotsBlocked []string // same-origin URLs linked from crawled pages but disallowed by robots.txt (deduped, capped at 200)
+	DurationMS    int64
+}
+
 type crawlJob struct {
-	URL string
+	URL   string
+	Depth int
 }
 
 // CrawlSite performs a bounded breadth-first crawl over one origin,
 // skipping robots-disallowed and noindex pages. Used for sitemap generation.
 func (c *SafeClient) CrawlSite(ctx context.Context, startURL string, maxPages int) (*CrawlReport, error) {
-	rawStart := normalizeScheme(startURL)
-	parsedStart, err := urlnorm.Normalize(rawStart, nil)
+	parsedStart, err := urlnorm.Normalize(normalizeScheme(startURL), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	report := &CrawlReport{}
+	var mu sync.Mutex
+	res, err := c.Crawl(ctx, startURL, CrawlOptions{
+		MaxPages: maxPages,
+		Visit: func(v *CrawlVisit) {
+			mu.Lock()
+			defer mu.Unlock()
+			if v.Err != nil {
+				report.Errors = append(report.Errors, v.URL+": "+v.Err.Error())
+				return
+			}
+			r := v.Result
+			if r.StatusCode != http.StatusOK {
+				report.Excluded = append(report.Excluded, v.URL)
+				return
+			}
+			if finalNorm, ferr := urlnorm.Normalize(r.FinalURL, parsedStart); ferr == nil && !strings.EqualFold(finalNorm.Host, parsedStart.Host) {
+				// Redirected off-origin: not this site's page, exclude it.
+				report.Excluded = append(report.Excluded, v.URL)
+				return
+			}
+			if v.Noindex {
+				report.Excluded = append(report.Excluded, v.URL)
+				return
+			}
+			report.Pages = append(report.Pages, CrawledPage{
+				URL:        v.URL,
+				FinalURL:   r.FinalURL,
+				StatusCode: r.StatusCode,
+				Title:      v.Title,
+				Noindex:    v.Noindex,
+				LastMod:    lastModFromHeaders(r),
+			})
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+	report.StartURL = res.StartURL
+	report.Visited = res.Visited
+	report.DurationMS = res.DurationMS
+	if res.Visited == 0 && len(res.RobotsBlocked) == 1 && res.RobotsBlocked[0] == res.StartURL {
+		report.Excluded = append(report.Excluded, res.StartURL) // seed disallowed by robots.txt
+	}
+	return report, nil
+}
+
+// robotsTargets returns the forms of u that robots.txt rules are matched
+// against: the percent-encoded path plus "?query" (RFC 9309), and the decoded
+// equivalent so rules written with raw Unicode still apply.
+func robotsTargets(u *url.URL) [2]string {
+	enc, dec := u.EscapedPath(), u.Path
+	if enc == "" {
+		enc, dec = "/", "/"
+	}
+	if u.RawQuery != "" {
+		enc += "?" + u.RawQuery
+		dec += "?" + u.RawQuery
+	}
+	return [2]string{enc, dec}
+}
+
+// Crawl performs a bounded breadth-first crawl over one origin, reporting
+// every fetched URL through opts.Visit. Batch index is click depth.
+func (c *SafeClient) Crawl(ctx context.Context, startURL string, opts CrawlOptions) (*CrawlResult, error) {
+	began := time.Now()
+	maxPages, workers := opts.MaxPages, opts.Concurrency
+	if maxPages <= 0 {
+		maxPages = crawlPagesDefault
+	}
+	if workers <= 0 {
+		workers = crawlConcurrencyDefault
+	}
+	visit := opts.Visit
+	if visit == nil {
+		visit = func(*CrawlVisit) {}
+	}
+
+	parsedStart, err := urlnorm.Normalize(normalizeScheme(startURL), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -51,17 +172,21 @@ func (c *SafeClient) CrawlSite(ctx context.Context, startURL string, maxPages in
 	// Respect robots.txt disallow rules for "*". Per RFC 9309: a robots.txt
 	// that is unreachable or errors server-side (5xx) means the whole site
 	// is disallowed; one that 404s/4xx means there are no restrictions.
-	var blocked func(string) bool
+	var blocked func(*url.URL) bool
 	var crawlDelaySec float64
 	robotsRes, rerr := c.Fetch(ctx, parsedStart.Scheme+"://"+parsedStart.Host+"/robots.txt")
 	switch {
 	case rerr != nil || (robotsRes != nil && robotsRes.StatusCode >= 500):
-		blocked = func(string) bool { return true }
+		blocked = func(*url.URL) bool { return true }
 	case robotsRes.StatusCode == http.StatusOK:
 		parsedRobots := parseRobots(string(robotsRes.Body))
-		blocked = func(path string) bool {
-			allowed, _ := parsedRobots.allowsPath("*", path)
-			return !allowed
+		blocked = func(u *url.URL) bool {
+			for _, target := range robotsTargets(u) {
+				if allowed, _ := parsedRobots.allowsPath("*", target); !allowed {
+					return true
+				}
+			}
+			return false
 		}
 		if group := parsedRobots.groupForAgent("*"); group != nil && group.hasDelay {
 			crawlDelaySec = group.crawlDelay
@@ -70,19 +195,18 @@ func (c *SafeClient) CrawlSite(ctx context.Context, startURL string, maxPages in
 			}
 		}
 	default:
-		blocked = func(string) bool { return false }
+		blocked = func(*url.URL) bool { return false }
 	}
 	crawlDelay := time.Duration(crawlDelaySec * float64(time.Second))
 
-	report := &CrawlReport{StartURL: start}
+	result := &CrawlResult{StartURL: start}
 
 	var (
-		mu        sync.Mutex
-		visited   = map[string]bool{}
-		queue     []crawlJob
-		workers   = 8
-		wg        sync.WaitGroup
-		extractMu sync.Mutex
+		mu         sync.Mutex
+		visited    = map[string]bool{}
+		queue      []crawlJob
+		wg         sync.WaitGroup
+		blockedSet = map[string]bool{}
 	)
 	if crawlDelaySec > 0 {
 		// A crawl-delay only makes sense against a single in-flight request.
@@ -90,44 +214,63 @@ func (c *SafeClient) CrawlSite(ctx context.Context, startURL string, maxPages in
 	}
 	sem := make(chan struct{}, workers)
 
-	enqueue := func(raw string) {
+	// enqueue and the robots bookkeeping only run on the coordinating
+	// goroutine, between batches, so they need no locking.
+	enqueue := func(raw string, depth int) {
 		normalized, nerr := urlnorm.Normalize(raw, parsedStart)
 		if nerr != nil {
 			return
 		}
 		key := urlnorm.Key(raw, parsedStart)
-		mu.Lock()
-		defer mu.Unlock()
 		if visited[key] {
 			return
 		}
 		if len(visited) >= maxPages*2 { // allow headroom for excluded pages
+			result.Truncated = true
 			return
 		}
 		visited[key] = true
-		queue = append(queue, crawlJob{URL: normalized.String()})
+		queue = append(queue, crawlJob{URL: normalized.String(), Depth: depth})
+	}
+
+	finish := func() (*CrawlResult, error) {
+		sort.Strings(result.RobotsBlocked)
+		result.DurationMS = time.Since(began).Milliseconds()
+		return result, nil
 	}
 
 	// The seed URL must itself respect robots.txt before ever being fetched.
-	if blocked(parsedStart.Path) {
-		report.Excluded = append(report.Excluded, start)
-		return report, nil
+	if blocked(parsedStart) {
+		result.RobotsBlocked = []string{start}
+		return finish()
 	}
-	enqueue(start)
+	enqueue(start, 0)
+
+	type foundLink struct {
+		url   *url.URL
+		depth int
+	}
 
 	for len(queue) > 0 {
+		// Worker timing must not change what gets crawled: take the batch in
+		// URL order, assign the budget before any fetch starts, and build the
+		// next batch only once this one has fully finished.
 		batch := queue
 		queue = nil
+		sort.Slice(batch, func(i, j int) bool { return batch[i].URL < batch[j].URL })
+		if room := maxPages - result.Visited; len(batch) > room {
+			batch = batch[:room]
+			result.Truncated = true
+		}
+		result.Visited += len(batch)
 
+		var (
+			found  []foundLink // same-origin links discovered by this batch
+			finals []string    // keys of redirect destinations reached by this batch
+		)
 		for _, job := range batch {
-			mu.Lock()
-			done := report.Visited >= maxPages
-			mu.Unlock()
-			if done {
-				break
-			}
 			wg.Add(1)
-			go func(u string) {
+			go func(job crawlJob) {
 				defer wg.Done()
 				sem <- struct{}{}
 				defer func() { <-sem }()
@@ -142,90 +285,103 @@ func (c *SafeClient) CrawlSite(ctx context.Context, startURL string, maxPages in
 					}()
 				}
 
-				mu.Lock()
-				if report.Visited >= maxPages {
-					mu.Unlock()
-					return
-				}
-				report.Visited++
-				mu.Unlock()
-
-				res, err := c.Fetch(ctx, u)
+				v := &CrawlVisit{URL: job.URL, Depth: job.Depth}
+				res, err := c.Fetch(ctx, job.URL)
 				if err != nil {
-					extractMu.Lock()
-					report.Errors = append(report.Errors, u+": "+err.Error())
-					extractMu.Unlock()
+					v.Err = err
+					visit(v)
 					return
 				}
+				v.Result = res
 
 				// Don't re-crawl (or re-report) wherever this redirected to.
-				if res.FinalURL != "" && res.FinalURL != u {
+				if res.FinalURL != "" && res.FinalURL != job.URL {
 					if fk := urlnorm.Key(res.FinalURL, parsedStart); fk != "" {
 						mu.Lock()
-						visited[fk] = true
+						finals = append(finals, fk)
 						mu.Unlock()
 					}
 				}
 
 				if res.StatusCode != http.StatusOK {
-					extractMu.Lock()
-					report.Excluded = append(report.Excluded, u)
-					extractMu.Unlock()
+					visit(v)
 					return
 				}
-
 				if finalNorm, ferr := urlnorm.Normalize(res.FinalURL, parsedStart); ferr == nil && !strings.EqualFold(finalNorm.Host, parsedStart.Host) {
-					// Redirected off-origin: not this site's page, exclude it.
-					extractMu.Lock()
-					report.Excluded = append(report.Excluded, u)
-					extractMu.Unlock()
+					// Redirected off-origin: not this site's page.
+					visit(v)
 					return
 				}
 
 				title, links, metaNoindex := extractTitleLinks(res.Body)
-				noindex := metaNoindex || hasNoindexXRobotsTag(res.Headers["X-Robots-Tag"])
-				page := CrawledPage{
-					URL:        u,
-					FinalURL:   res.FinalURL,
-					StatusCode: res.StatusCode,
-					Title:      title,
-					Noindex:    noindex,
-					LastMod:    lastModFromHeaders(res),
-				}
-
-				extractMu.Lock()
-				if noindex {
-					report.Excluded = append(report.Excluded, u)
-				} else {
-					report.Pages = append(report.Pages, page)
-				}
-				extractMu.Unlock()
+				v.Title = title
+				v.Noindex = metaNoindex || hasNoindexXRobotsTag(res.Headers["X-Robots-Tag"])
 
 				linkBase := res.FinalURL
 				if linkBase == "" {
-					linkBase = u
+					linkBase = job.URL
 				}
+				var pageLinks []foundLink
+				seen := map[string]bool{}
 				for _, link := range links {
 					abs, ok := sameOriginURL(parsedStart, linkBase, link)
 					if !ok {
 						continue
 					}
-					if blocked(abs.Path) {
-						continue
-					}
-					if isCrawlablePath(abs.Path) {
-						enqueue(abs.String())
+					if key := abs.String(); !seen[key] {
+						seen[key] = true
+						v.Links = append(v.Links, key)
+						pageLinks = append(pageLinks, foundLink{abs, job.Depth + 1})
 					}
 				}
-			}(job.URL)
+				visit(v)
+
+				mu.Lock()
+				found = append(found, pageLinks...)
+				mu.Unlock()
+			}(job)
 		}
 		wg.Wait()
-		if report.Visited >= maxPages {
+
+		for _, fk := range finals {
+			visited[fk] = true
+		}
+		sort.SliceStable(found, func(i, j int) bool { return found[i].url.String() < found[j].url.String() })
+		for _, l := range found {
+			if !isCrawlablePath(l.url.Path) {
+				continue
+			}
+			if blocked(l.url) {
+				if k := l.url.String(); !blockedSet[k] && len(result.RobotsBlocked) < crawlMaxRobotsBlocked {
+					blockedSet[k] = true
+					result.RobotsBlocked = append(result.RobotsBlocked, k)
+				}
+				continue
+			}
+			enqueue(l.url.String(), l.depth)
+		}
+
+		if result.Visited >= maxPages {
+			if len(queue) > 0 {
+				result.Truncated = true
+			}
 			break
 		}
 	}
 
-	return report, nil
+	return finish()
+}
+
+// CrawlablePath reports whether a URL path looks like a content page the
+// crawler would follow (not an asset, admin, cart, search, or feed path).
+func CrawlablePath(path string) bool { return isCrawlablePath(path) }
+
+// WithMaxBodyBytes returns a client with the same options but a different
+// response body cap (e.g. 52 MB for sitemaps).
+func (c *SafeClient) WithMaxBodyBytes(n int64) *SafeClient {
+	opts := c.options
+	opts.MaxBodyBytes = n
+	return NewSafeClient(opts)
 }
 
 // extractTitleLinks pulls title, same-document links, and noindex state from HTML

@@ -449,3 +449,216 @@ func TestCrawlSiteDedupeKeepsPaginationParams(t *testing.T) {
 		t.Errorf("expected both page=2 and page=3 reported as distinct pages, got %+v", report.Pages)
 	}
 }
+
+// crawlSite is a small site: / -> /a (-> /a/deep), /gone (404), /old (301 -> /new)
+func crawlTestServer(t *testing.T, robots string) *httptest.Server {
+	t.Helper()
+	page := func(w http.ResponseWriter, body string) {
+		w.Header().Set("Content-Type", "text/html")
+		_, _ = w.Write([]byte("<html><head><title>T</title></head><body>" + body + "</body></html>"))
+	}
+	mux := http.NewServeMux()
+	mux.HandleFunc("/robots.txt", func(w http.ResponseWriter, r *http.Request) {
+		if robots == "" {
+			http.NotFound(w, r)
+			return
+		}
+		_, _ = w.Write([]byte(robots))
+	})
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/" {
+			http.NotFound(w, r)
+			return
+		}
+		page(w, `<a href="/a">a</a> <a href="/a#frag">dup</a> <a href="/gone">gone</a> <a href="/old">old</a> <a href="/list?sort=price">sorted</a> <a href="/private/x">p</a> <a href="https://elsewhere.example/">ext</a>`)
+	})
+	mux.HandleFunc("/a", func(w http.ResponseWriter, r *http.Request) { page(w, `<a href="/a/deep">deep</a>`) })
+	mux.HandleFunc("/a/deep", func(w http.ResponseWriter, r *http.Request) { page(w, `deep`) })
+	mux.HandleFunc("/list", func(w http.ResponseWriter, r *http.Request) { page(w, `list`) })
+	mux.HandleFunc("/old", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/new", http.StatusMovedPermanently)
+	})
+	mux.HandleFunc("/new", func(w http.ResponseWriter, r *http.Request) { page(w, `new`) })
+	ts := httptest.NewServer(mux)
+	t.Cleanup(ts.Close)
+	return ts
+}
+
+func collectVisits(t *testing.T, ts *httptest.Server, opts CrawlOptions) (map[string]CrawlVisit, *CrawlResult) {
+	t.Helper()
+	var mu sync.Mutex
+	visits := map[string]CrawlVisit{}
+	opts.Visit = func(v *CrawlVisit) {
+		cp := *v
+		if v.Result != nil {
+			r := *v.Result
+			r.Body = nil
+			cp.Result = &r
+		}
+		mu.Lock()
+		visits[strings.TrimPrefix(v.URL, ts.URL)] = cp
+		mu.Unlock()
+	}
+	client := NewSafeClient(ClientOptions{Timeout: 5 * time.Second, AllowPrivateIPs: true})
+	res, err := client.Crawl(context.Background(), ts.URL, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return visits, res
+}
+
+func TestCrawlDepthLinksAndVisits(t *testing.T) {
+	ts := crawlTestServer(t, "")
+	visits, res := collectVisits(t, ts, CrawlOptions{MaxPages: 50})
+
+	wantDepth := map[string]int{"/": 0, "/a": 1, "/gone": 1, "/old": 1, "/list?sort=price": 1, "/private/x": 1, "/a/deep": 2}
+	for path, depth := range wantDepth {
+		v, ok := visits[path]
+		if !ok {
+			t.Errorf("no visit for %s (have %v)", path, keysOf(visits))
+			continue
+		}
+		if v.Depth != depth {
+			t.Errorf("%s depth = %d, want %d", path, v.Depth, depth)
+		}
+	}
+	if res.Truncated {
+		t.Error("crawl within budget must not be truncated")
+	}
+	if res.Visited != len(visits) {
+		t.Errorf("Visited = %d, visits = %d", res.Visited, len(visits))
+	}
+	if res.DurationMS < 0 {
+		t.Error("negative duration")
+	}
+
+	// Links on a 200 page: same-origin, normalized, de-duplicated (/a and /a#frag collapse)
+	home := visits["/"]
+	if home.Result == nil || home.Result.StatusCode != 200 {
+		t.Fatalf("home visit: %+v", home)
+	}
+	if home.Title != "T" {
+		t.Errorf("title = %q", home.Title)
+	}
+	count := map[string]int{}
+	for _, l := range home.Links {
+		count[strings.TrimPrefix(l, ts.URL)]++
+	}
+	if count["/a"] != 1 || count["/gone"] != 1 || count["/list?sort=price"] != 1 || len(home.Links) != 5 {
+		t.Errorf("home links = %v", home.Links)
+	}
+	if len(visits["/a"].Links) != 1 {
+		t.Errorf("/a links = %v", visits["/a"].Links)
+	}
+
+	// 404 is visited with a result and no links
+	gone := visits["/gone"]
+	if gone.Result == nil || gone.Result.StatusCode != 404 || gone.Links != nil {
+		t.Errorf("/gone visit: %+v", gone)
+	}
+	// redirect target: requested URL is /old, result landed on /new with one hop
+	old := visits["/old"]
+	if old.Result == nil || old.Result.StatusCode != 200 || len(old.Result.Redirects) != 1 || !strings.HasSuffix(old.Result.FinalURL, "/new") {
+		t.Errorf("/old visit: %+v", old.Result)
+	}
+	if _, ok := visits["/new"]; ok {
+		t.Error("/new must not be fetched separately after the redirect")
+	}
+}
+
+func TestCrawlVisitFetchError(t *testing.T) {
+	ts := crawlTestServer(t, "")
+	ts.Config.SetKeepAlivesEnabled(false)
+	client := NewSafeClient(ClientOptions{Timeout: 5 * time.Second, AllowPrivateIPs: true})
+	var got *CrawlVisit
+	base := ts.URL
+	ts.Close()
+	_, err := client.Crawl(context.Background(), base, CrawlOptions{Visit: func(v *CrawlVisit) { cp := *v; got = &cp }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// robots.txt is unreachable, so the whole site counts as disallowed and nothing is fetched
+	if got != nil {
+		t.Errorf("expected no visits when robots.txt is unreachable, got %+v", got)
+	}
+}
+
+func TestCrawlTruncated(t *testing.T) {
+	ts := crawlTestServer(t, "")
+	_, res := collectVisits(t, ts, CrawlOptions{MaxPages: 3, Concurrency: 1})
+	if res.Visited != 3 || !res.Truncated {
+		t.Errorf("Visited=%d Truncated=%v, want 3/true", res.Visited, res.Truncated)
+	}
+	// Budget exactly equal to the site size (8 fetches) is not truncation
+	_, res = collectVisits(t, ts, CrawlOptions{MaxPages: 8})
+	if res.Truncated {
+		t.Errorf("exact-fit budget reported truncated (visited %d)", res.Visited)
+	}
+}
+
+func TestCrawlRobotsBlocked(t *testing.T) {
+	ts := crawlTestServer(t, "User-agent: *\nDisallow: /private/\n")
+	visits, res := collectVisits(t, ts, CrawlOptions{MaxPages: 50})
+	if _, ok := visits["/private/x"]; ok {
+		t.Error("robots-disallowed URL was fetched")
+	}
+	if len(res.RobotsBlocked) != 1 || res.RobotsBlocked[0] != ts.URL+"/private/x" {
+		t.Errorf("RobotsBlocked = %v", res.RobotsBlocked)
+	}
+	// links are reported before robots filtering
+	found := false
+	for _, l := range visits["/"].Links {
+		found = found || l == ts.URL+"/private/x"
+	}
+	if !found {
+		t.Errorf("home Links should include the blocked URL: %v", visits["/"].Links)
+	}
+}
+
+func TestCrawlRobotsMatchesQueryString(t *testing.T) {
+	ts := crawlTestServer(t, "User-agent: *\nDisallow: /*?sort=\n")
+	visits, res := collectVisits(t, ts, CrawlOptions{MaxPages: 50})
+	if _, ok := visits["/list?sort=price"]; ok {
+		t.Error("URL matching a query-string Disallow rule was fetched")
+	}
+	if len(res.RobotsBlocked) != 1 || res.RobotsBlocked[0] != ts.URL+"/list?sort=price" {
+		t.Errorf("RobotsBlocked = %v", res.RobotsBlocked)
+	}
+	if _, ok := visits["/a"]; !ok {
+		t.Error("unrelated page must still be crawled")
+	}
+
+	// A seed with a matching query is blocked too
+	client := NewSafeClient(ClientOptions{Timeout: 5 * time.Second, AllowPrivateIPs: true})
+	seeded, err := client.Crawl(context.Background(), ts.URL+"/list?sort=price", CrawlOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if seeded.Visited != 0 || len(seeded.RobotsBlocked) != 1 {
+		t.Errorf("seed with blocked query: %+v", seeded)
+	}
+}
+
+func TestCrawlSiteReportsDuration(t *testing.T) {
+	ts := crawlTestServer(t, "")
+	client := NewSafeClient(ClientOptions{Timeout: 5 * time.Second, AllowPrivateIPs: true})
+	report, err := client.CrawlSite(context.Background(), ts.URL, 50)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Visited == 0 || report.StartURL == "" {
+		t.Errorf("report: %+v", report)
+	}
+	if report.DurationMS < 0 {
+		t.Errorf("duration = %d", report.DurationMS)
+	}
+}
+
+func keysOf(m map[string]CrawlVisit) []string {
+	var out []string
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
+}

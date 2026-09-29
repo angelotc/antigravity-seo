@@ -83,7 +83,11 @@ func runLintSchemaFileCmd(args []string) {
 	var err error
 
 	if len(positional) >= 1 {
+		// Explicit path: a missing or unreadable file is a real error
 		report, err = audit.LintSchemaFile(positional[0])
+		if err != nil {
+			fatal("%v", err)
+		}
 	} else {
 		// Hook mode: receive the tool payload on stdin and lint the written file
 		payload, readErr := io.ReadAll(os.Stdin)
@@ -95,10 +99,9 @@ func runLintSchemaFileCmd(args []string) {
 			ToolInput    map[string]interface{} `json:"tool_input"`
 			ToolResponse map[string]interface{} `json:"tool_response"`
 		}
-		if err := json.Unmarshal(payload, &hook); err != nil {
+		if jsonErr := json.Unmarshal(payload, &hook); jsonErr != nil {
 			// Not JSON — treat stdin as raw file content
 			report = audit.LintSchemaSource("<stdin>", payload)
-			err = nil
 		} else {
 			path := extractHookFilePath(hook.ToolInput, hook.ToolResponse)
 			if path == "" {
@@ -194,11 +197,19 @@ func runDriftCmd(args []string) {
 	fs := flag.NewFlagSet("drift "+action, flag.ExitOnError)
 	asJSON := fs.Bool("json", false, "Output JSON")
 	timeoutSec := fs.Int("timeout", 20, "Timeout in seconds")
+	var failOn *string
+	if action == "compare" {
+		failOn = fs.String("fail-on", "", "Exit 3 if the page changed since the baseline: change")
+	}
 	positional := parseFlags(fs, rest)
 
 	if len(positional) < 1 {
 		fatal("URL argument required")
 	}
+	if failOn != nil && *failOn != "" && !strings.EqualFold(strings.TrimSpace(*failOn), "change") {
+		fatal("invalid --fail-on value %q (expected change)", *failOn)
+	}
+	failOnChange := failOn != nil && *failOn != ""
 	targetURL := normalizeURL(positional[0])
 	res, _ := fetchTarget(*timeoutSec, targetURL)
 
@@ -227,8 +238,17 @@ func runDriftCmd(args []string) {
 		if err != nil {
 			fatal("compare failed: %v", err)
 		}
+		exitIfChanged := func() {
+			if failOnChange && report.Changed {
+				if !jsonMode {
+					fmt.Fprintln(os.Stderr, "seo-engine: page changed since baseline (--fail-on change)")
+				}
+				os.Exit(exitFindings)
+			}
+		}
 		if *asJSON {
 			outputJSON(report)
+			exitIfChanged()
 			return
 		}
 		fmt.Printf("\n=== DRIFT COMPARE: %s ===\n", targetURL)
@@ -242,6 +262,7 @@ func runDriftCmd(args []string) {
 		for _, c := range report.Changes {
 			fmt.Printf("  %-18s %s -> %s\n", c.Field, truncateForCLI(c.Before, 60), truncateForCLI(c.After, 60))
 		}
+		exitIfChanged()
 
 	default:
 		fatal("unknown drift action %q (expected baseline|compare|history)", action)

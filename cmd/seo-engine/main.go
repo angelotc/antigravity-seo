@@ -4,8 +4,11 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"strings"
+
+	"antigravity-seo/internal/audit"
 )
 
 // Version is the engine's release version. It defaults to the value below
@@ -14,8 +17,10 @@ import (
 // install.sh/install.ps1) so a single source of truth drives the binary.
 var Version = "2.1.0"
 
-func printUsage() {
-	fmt.Printf(`Antigravity SEO Engine v%s
+func printUsage() { printUsageTo(os.Stdout) }
+
+func printUsageTo(w io.Writer) {
+	fmt.Fprintf(w, `Antigravity SEO Engine v%s
 High-speed, small pure-Go SEO & GEO audit engine.
 
 USAGE:
@@ -33,7 +38,8 @@ AUDIT COMMANDS:
   llms        Audit /llms.txt and /llms-full.txt availability for AI discovery
 
 SITE COMMANDS:
-  sitemap     Analyze a sitemap URL — or generate one: sitemap generate <url>
+  crawl       Site-wide crawl audit: broken links, duplicates, canonicals, hreflang, sitemap/orphans
+  sitemap     Analyze a sitemap (follows indexes; auto-discovers from a site root) — or generate one: sitemap generate <url>
   robots      Inspect robots.txt directives and AI crawler access policies
   drift       Page-change monitoring: drift baseline|compare|history <url>
   backlinks   Explore the domain's own Common Crawl capture index (keyless)
@@ -56,12 +62,32 @@ OPTIONS:
               covering Latin + Japanese; no WeasyPrint/Chromium dependency)
   --out       (report, sitemap) Output file path
   --limit     Number of URLs to check in sitemaps (default: 10, max: 100)
+  --max-sitemaps
+              (sitemap, crawl) Child sitemaps to fetch when following an index (default: 50)
+  --max-pages (crawl, sitemap generate) Pages to crawl (crawl default: 100)
+  --concurrency
+              (crawl) Parallel fetches (default: 4)
+  --sitemap   (crawl) Sitemap URL; default is auto-discovery from the site root
+  --no-sitemap
+              (crawl) Skip sitemap checks
   --timeout   Request timeout in seconds (default: 15)
   --offline   (doctor) skip the network reachability probe
+  --fail-on critical|warning
+              (headers, audit, page, report, schema, images, content, hreflang, crawl)
+              Exit 3 after normal output if any finding is at or above the level.
+              For drift compare use --fail-on change.
+
+EXIT CODES:
+  0  success
+  1  error (fetch, auth, usage)
+  2  invalid flag (Go flag parser)
+  3  --fail-on threshold met
 
 EXAMPLES:
   seo-engine headers https://example.com
   seo-engine page https://example.com --json
+  seo-engine crawl https://example.com --max-pages 100 --json
+  seo-engine sitemap https://example.com --limit 20
   seo-engine report https://example.com --pdf --out audit.pdf
   seo-engine backlinks example.com --limit 25
   seo-engine gsc query sc-domain:example.com
@@ -71,11 +97,12 @@ EXAMPLES:
 
 func main() {
 	if len(os.Args) < 2 {
-		printUsage()
+		printUsageTo(os.Stderr)
 		os.Exit(1)
 	}
 
 	command := os.Args[1]
+	jsonMode = hasJSONFlag(os.Args[2:])
 
 	switch command {
 	case "version", "-v", "--version":
@@ -108,6 +135,9 @@ func main() {
 
 	case "llms":
 		runLLMSCmd(os.Args[2:])
+
+	case "crawl":
+		runCrawlCmd(os.Args[2:])
 
 	case "sitemap":
 		runSitemapCmd(os.Args[2:])
@@ -146,8 +176,11 @@ func main() {
 		printUsage()
 
 	default:
+		if jsonMode {
+			fatal("unknown command: %s\n  Run `seo-engine help` for usage", command)
+		}
 		fmt.Fprintf(os.Stderr, "Unknown command: %s\n\n", command)
-		printUsage()
+		printUsageTo(os.Stderr)
 		os.Exit(1)
 	}
 }
@@ -199,7 +232,109 @@ func outputJSON(v interface{}) {
 	fmt.Println(string(b))
 }
 
+// jsonMode is true when the invocation carries --json; errors then go to
+// stdout as a JSON object instead of plain text on stderr.
+var jsonMode bool
+
+// hasJSONFlag reports whether args contain a true --json / -json flag.
+func hasJSONFlag(args []string) bool {
+	for _, a := range args {
+		switch a {
+		case "--json", "-json", "--json=true", "-json=true":
+			return true
+		}
+	}
+	return false
+}
+
+// formatErrorJSON renders an error as {"error":{command,message,hint}}. The
+// first line of msg is the message; any remaining lines become the hint.
+func formatErrorJSON(command, msg string) []byte {
+	first, rest, _ := strings.Cut(strings.TrimSpace(msg), "\n")
+	body := struct {
+		Command string `json:"command"`
+		Message string `json:"message"`
+		Hint    string `json:"hint,omitempty"`
+	}{command, strings.TrimSpace(first), strings.TrimSpace(rest)}
+	b, _ := json.Marshal(map[string]interface{}{"error": body})
+	return b
+}
+
 func fatal(format string, args ...interface{}) {
-	fmt.Fprintf(os.Stderr, "Error: "+format+"\n", args...)
+	msg := fmt.Sprintf(format, args...)
+	if jsonMode {
+		command := ""
+		if len(os.Args) > 1 {
+			command = os.Args[1]
+		}
+		fmt.Println(string(formatErrorJSON(command, msg)))
+		os.Exit(1)
+	}
+	fmt.Fprintf(os.Stderr, "Error: %s\n", msg)
 	os.Exit(1)
+}
+
+// Exit code returned when a --fail-on threshold is met.
+const exitFindings = 3
+
+// addFailOnFlag registers --fail-on on fs. Validate the value with
+// checkFailOn right after parsing, before any network work.
+func addFailOnFlag(fs *flag.FlagSet) *string {
+	return fs.String("fail-on", "", "Exit 3 if findings reach this severity: critical or warning")
+}
+
+// findingsTrip reports whether any severity meets the threshold. Valid
+// thresholds are "" (never trips), "critical" and "warning", case-insensitive.
+func findingsTrip(threshold string, severities []string) (bool, error) {
+	var tripOn map[string]bool
+	switch strings.ToLower(strings.TrimSpace(threshold)) {
+	case "":
+		return false, nil
+	case "critical":
+		tripOn = map[string]bool{"CRITICAL": true}
+	case "warning":
+		tripOn = map[string]bool{"CRITICAL": true, "WARNING": true}
+	default:
+		return false, fmt.Errorf("invalid --fail-on value %q (expected critical or warning)", threshold)
+	}
+	for _, sev := range severities {
+		if tripOn[strings.ToUpper(sev)] {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// checkFailOn fatals on an invalid --fail-on value.
+func checkFailOn(threshold string) {
+	if _, err := findingsTrip(threshold, nil); err != nil {
+		fatal("%v", err)
+	}
+}
+
+// exitIfFindings exits 3 when the threshold is met. Call it after all normal
+// output has been written.
+func exitIfFindings(threshold string, severities []string) {
+	trip, err := findingsTrip(threshold, severities)
+	if err != nil {
+		fatal("%v", err)
+	}
+	if !trip {
+		return
+	}
+	if !jsonMode {
+		fmt.Fprintf(os.Stderr, "seo-engine: findings at or above --fail-on %s\n", strings.ToLower(threshold))
+	}
+	os.Exit(exitFindings)
+}
+
+// issueSeverities collects severities from any number of issue lists.
+func issueSeverities(lists ...[]audit.AuditIssue) []string {
+	var out []string
+	for _, l := range lists {
+		for _, i := range l {
+			out = append(out, string(i.Severity))
+		}
+	}
+	return out
 }

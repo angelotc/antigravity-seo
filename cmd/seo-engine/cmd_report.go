@@ -17,13 +17,15 @@ func runReportCmd(args []string) {
 	fs := flag.NewFlagSet("report", flag.ExitOnError)
 	asJSON := fs.Bool("json", false, "Output JSON summary instead of HTML/PDF")
 	asPDF := fs.Bool("pdf", false, "Render report directly to PDF (pure Go native A4 engine)")
-	outFile := fs.String("out", "", "Output file path (default: report-<host>-<date>.[html|pdf])")
+	outFile := fs.String("out", "", "Output file path (default: seo-report-<host>-<YYYYMMDD-HHMMSS>.[html|pdf] in the current directory)")
 	timeoutSec := fs.Int("timeout", 30, "Timeout in seconds")
+	failOn := addFailOnFlag(fs)
 	positional := parseFlags(fs, args)
 
 	if len(positional) < 1 {
 		fatal("URL argument required\n  Usage: seo-engine report <url> [--pdf] [--out report.pdf]")
 	}
+	checkFailOn(*failOn)
 	targetURL := normalizeURL(positional[0])
 
 	// Auto-enable PDF if --out ends in .pdf
@@ -35,14 +37,23 @@ func runReportCmd(args []string) {
 		Timeout: time.Duration(*timeoutSec) * time.Second,
 	})
 
-	fmt.Printf("Generating comprehensive SEO & GEO audit report for %s...\n", targetURL)
+	// Progress goes to stderr so stdout stays clean; --json stays silent
+	if !*asJSON {
+		fmt.Fprintf(os.Stderr, "Generating comprehensive SEO & GEO audit report for %s...\n", targetURL)
+	}
 	data, err := report.BuildAuditData(context.Background(), client, targetURL)
 	if err != nil {
 		fatal("report generation failed: %v", err)
 	}
 
+	sevs := make([]string, 0, len(data.Issues))
+	for _, iss := range data.Issues {
+		sevs = append(sevs, string(iss.Severity))
+	}
+
 	if *asJSON {
 		outputJSON(data)
+		exitIfFindings(*failOn, sevs)
 		return
 	}
 
@@ -76,6 +87,7 @@ func runReportCmd(args []string) {
 		fmt.Printf("Engine:        Pure Go A4 PDF (github.com/go-pdf/fpdf)\n")
 		fmt.Printf("Quality Check: %s (Size: %d KB)\n", review.Status, review.SizeBytes/1024)
 		fmt.Printf("PDF Saved:     %s\n\n", targetPath)
+		exitIfFindings(*failOn, sevs)
 		return
 	}
 
@@ -95,4 +107,5 @@ func runReportCmd(args []string) {
 	fmt.Printf("Issues:        %d total findings\n", len(data.Issues))
 	fmt.Printf("HTML Saved:    %s\n", targetPath)
 	fmt.Printf("Tip: Run with `--pdf` to render a native PDF.\n\n")
+	exitIfFindings(*failOn, sevs)
 }

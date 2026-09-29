@@ -108,3 +108,78 @@ Source: external staff review (verified item-by-item) + independent review addit
 **Not verified** — PowerShell scripts (no pwsh on host); installer against a real release (next tag must publish SHA256SUMS.txt, which release.yml already does).
 
 **Costs** — binary grew ~13MB → ~18MB (embedded JP font ~3.4MB + x/text tables).
+
+---
+
+# Review follow-ups (2026-09-29)
+
+Source: UX/functionality review (CLI hands-on + engine + skills passes). Scope agreed: suggested-order items 1-3, plus drop Claude Code/OpenCode support (Antigravity-only).
+
+## Plan
+
+### A — Agent-facing correctness (cmd/seo-engine, internal/api)
+- [x] PSI: request all 4 Lighthouse categories (`q.Add`, not `q.Set`)
+- [x] CrUX: decode real API shape (`percentiles` object, p75 number|string; history `percentilesTimeseries.p75s` with nulls); origin detection accepts `/`; 404 → friendly "no CrUX data"; fixtures match documented responses
+- [x] `--json` errors: every `fatal` emits `{"error":{command,message,hint}}` on stdout when `--json` is present
+- [x] `report`: progress banner to stderr (never pollutes `--json` stdout); help text matches real default filename
+- [x] `--fail-on critical|warning` on issue-producing commands → exit 3; `drift compare --fail-on change` → exit 3; `lint-schema-file <missing path>` → exit 1 (hook stdin mode unchanged)
+- [x] Exit-code contract documented in usage: 0 ok, 1 error, 2 flag/usage (Go flag), 3 gate tripped
+
+### B — Sitemap library (internal/crawler/sitemap.go)
+- [x] Follow `<sitemapindex>` children (bounded concurrency, `--max-sitemaps` cap, nested-index + cycle guard, per-child counts/errors, `complete` flag)
+- [x] Discover sitemaps for a bare domain/HTML URL: robots.txt `Sitemap:` → `/sitemap.xml` → `/sitemap_index.xml`
+- [x] Non-200 sitemap → error; gzip by magic bytes
+- [x] `sample_urls` = `--limit` URLs spread round-robin across child sitemaps; health check uses that same sample; clamp `--limit` to 100
+
+### C — Site crawl audit (new `seo-engine crawl`)
+- [x] Refactor crawl core (`Crawl` with options + per-visit callback, depth, outlinks, all statuses); `CrawlSite` becomes a wrapper (sitemap generate unchanged)
+- [x] Robots matching includes the query string
+- [x] `internal/audit/site.go`: cross-page checks — broken internal links, internal redirects/chains, duplicate titles/descriptions/content, canonical → non-200/noindex/redirect, hreflang reciprocity + dead targets, sitemap cross-check (noindex/non-200/redirect/non-canonical in sitemap, indexable pages missing from sitemap, orphans only when crawl complete), deep pages
+- [x] CLI: `crawl <url> [--max-pages 100] [--concurrency 4] [--sitemap URL|--no-sitemap] [--fail-on] [--json]`; wire B into `sitemap` command; skills (seo-audit, seo, seo-technical) use `crawl`
+
+### D — Antigravity-only
+- [x] Drop Claude Code/OpenCode/Codex from README, hooks.json matcher, seo-schema skill
+
+### Verify
+- [x] `go vet ./... && go test ./...` green; cross-compile linux/darwin/windows
+- [x] Live: psi/crux shape (fixtures from docs; no valid key on VM), `sitemap https://nipponhomes.com` (index followed, sample spread), `crawl https://nipponhomes.com --max-pages 50`, `report --json | jq`, `--fail-on` exit codes, JSON error envelope
+
+## Review
+
+**Delivered**
+- A: PSI now requests all 4 Lighthouse categories. The CrUX decoder matches the documented API: `percentiles` is an object, p75 is a number or string, history is `percentilesTimeseries.p75s` with nulls. A CrUX 404 returns `no_data` with exit 0. `--json` errors go to stdout as `{"error":{command,message,hint}}`. The `report` banner goes to stderr. `--fail-on critical|warning` exits 3 on 9 commands, and `drift compare --fail-on change` does the same. `lint-schema-file <missing>` exits 1. Usage has an EXIT CODES section. Google API errors are summarized to one line.
+- B: the sitemap library follows index trees with a child cap, a depth limit of 3 and cycle detection. It auto-discovers sitemaps from robots.txt, then /sitemap.xml, then /sitemap_index.xml. It detects gzip by magic bytes, and rejects non-200 and HTML responses clearly. The sample is spread round-robin across children and evenly within each child, and it is the same set that gets health-checked. `total_urls` counts every URL, even past the 200k storage cap. `--max-sitemaps` added. The sitemap client allows 52 MB bodies.
+- C: new `seo-engine crawl`:
+  - An options-based `Crawl` core. `CrawlSite` is now a wrapper around it, so `sitemap generate` is unchanged.
+  - `audit.AuditSite`/`AnalyzeSite` cover broken internal links, links to redirects and redirect chains, missing or duplicate titles and descriptions, duplicate content, canonical targets, hreflang return links, sitemap coverage and orphans, click depth, and robots-blocked links.
+  - Orphans are gated on crawl completeness, and missing-from-sitemap on sitemap completeness.
+  - Skills (seo-audit, seo, seo-technical) and the README are updated.
+- D: Antigravity-only. The Claude Code, OpenCode and Codex docs are removed, and the hook matcher is limited to Antigravity's write tools.
+
+**Fixed during integration**
+- Data race in `SafeClient.Fetch`: the transport can finish a background dial after `Do` returns, and its httptrace callbacks then wrote `timings` while `Fetch` read it. The trace state is now guarded by a mutex. This also cleared an intermittent `-race` failure in `TestInspectSitemapSampling`.
+- The crawl was nondeterministic: two runs on the same site fetched different page sets. Workers raced for the remaining budget, and links and redirect targets were recorded in the order fetches finished. Now the budget is assigned before any fetch starts, and the next batch is built only after the whole batch finishes, in URL order. Verified with identical page sets across two live nipponhomes runs.
+- Canonical checks skip noindex source pages. nipponhomes' noindexed `/explore?…` filter variants had been reported as 5 CRITICAL issues.
+- HTTP 503 is treated as blocked/unverified in both `crawl` and the sitemap health check, via the shared `crawler.UnverifiedStatus`. go.dev's `/change` link, which redirects to a googlesource host that intermittently returns 503, had flipped the crawl's exit code between runs.
+- Sitemap output printed one error line per child skipped by the cap (56 on nipponhomes). These are now summarized in a single line.
+
+**Verification**
+- gofmt clean. `go vet ./...` clean.
+- `go test -p 2 ./...` and `-race ./...` green.
+- Cross-compiles for linux/amd64, darwin/arm64 and windows/amd64.
+- Live checks:
+  - JSON error envelope: exit 1, empty stderr.
+  - `--fail-on`: 3 on a 404, 0 on a clean page, 1 on an invalid value.
+  - Hook mode on a missing file: `{}` and exit 0.
+  - `report --json` and `crawl --json` produce valid JSON.
+  - `sitemap https://nipponhomes.com`: discovered from robots.txt, 950,019 URLs, sample spread across child sitemaps.
+  - `crawl nipponhomes.com --max-pages 40`: deterministic, 0 critical.
+  - `crawl go.dev --max-pages 80`: 35 links pointing at redirects, which are real (spot-checked).
+
+**Not verified**
+- A successful PSI or CrUX call: the GOOGLE_API_KEY on this VM is invalid. The fixtures follow the documented response shapes.
+- `multi_replace_file_content` in the hook matcher is assumed to be an Antigravity tool name.
+- hooks.json's top-level key and relative command path are unchanged and unverified against Antigravity's hook loader.
+
+**Follow-ups**
+- A crawl with the sitemap check on a very large site (950k URLs) peaks at about 420 MB RSS and takes about 29 s, versus about 10 s with `--no-sitemap`. Consider a lower default for `--max-sitemaps` in `crawl`, or storing only URL keys.

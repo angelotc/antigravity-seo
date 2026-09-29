@@ -31,9 +31,15 @@ Run the high-speed Go engine to verify the foundational HTTP and bot access laye
 
 3. **XML Sitemap Validation**:
    ```bash
-   seo-engine sitemap <URL>/sitemap.xml --limit 15 --json
+   seo-engine sitemap <URL> --limit 15 --json
    ```
-   * Check sitemap index structure, count, and verify sample URLs are returning 200 OK.
+   * Pass the site root: sitemap indexes are followed and the sitemap is auto-discovered. Check index structure and total count, and verify the sample URLs (spread across child sitemaps) return 200 OK.
+
+4. **Site-Wide Crawl** (cross-page checks the single-URL commands cannot see):
+   ```bash
+   seo-engine crawl <URL> --max-pages 100 --json
+   ```
+   * Reports broken internal links, links to redirects, duplicate titles/descriptions/content, canonical and hreflang conflicts, and sitemap/orphan gaps. Add `--fail-on critical` to gate CI.
 
 ---
 

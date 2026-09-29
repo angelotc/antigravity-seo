@@ -5,6 +5,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 
@@ -13,7 +14,10 @@ import (
 
 func runGSCCmd(args []string) {
 	if len(args) < 1 {
-		printGSCUsage()
+		if jsonMode {
+			fatal("gsc subcommand required (query|inspect)\n  Run `seo-engine gsc help` for usage")
+		}
+		printGSCUsageTo(os.Stderr)
 		os.Exit(1)
 	}
 
@@ -24,16 +28,19 @@ func runGSCCmd(args []string) {
 	case "inspect":
 		runGSCInspect(args[1:])
 	case "help", "-h", "--help":
-		printGSCUsage()
+		printGSCUsageTo(os.Stdout)
 	default:
+		if jsonMode {
+			fatal("unknown gsc subcommand: %s\n  Run `seo-engine gsc help` for usage", sub)
+		}
 		fmt.Fprintf(os.Stderr, "Unknown gsc subcommand: %s\n\n", sub)
-		printGSCUsage()
+		printGSCUsageTo(os.Stderr)
 		os.Exit(1)
 	}
 }
 
-func printGSCUsage() {
-	fmt.Println(`Google Search Console (GSC) Commands:
+func printGSCUsageTo(w io.Writer) {
+	fmt.Fprintln(w, `Google Search Console (GSC) Commands:
   query      Query Search Analytics (clicks, impressions, CTR, position)
   inspect    Inspect URL indexation, crawl status, and canonical verdict
 

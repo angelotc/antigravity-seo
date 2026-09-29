@@ -28,16 +28,20 @@ func runHeadersCmd(args []string) {
 	fs := flag.NewFlagSet("headers", flag.ExitOnError)
 	asJSON := fs.Bool("json", false, "Output JSON")
 	timeoutSec := fs.Int("timeout", 15, "Timeout in seconds")
+	failOn := addFailOnFlag(fs)
 	positional := parseFlags(fs, args)
 
 	if len(positional) < 1 {
 		fatal("URL argument required")
 	}
+	checkFailOn(*failOn)
 	res, _ := fetchTarget(*timeoutSec, positional[0])
 	result := audit.InspectHeaders(res)
+	sevs := issueSeverities(result.Issues)
 
 	if *asJSON {
 		outputJSON(result)
+		exitIfFindings(*failOn, sevs)
 		return
 	}
 
@@ -83,17 +87,20 @@ func runHeadersCmd(args []string) {
 		}
 	}
 	fmt.Println()
+	exitIfFindings(*failOn, sevs)
 }
 
 func runAuditCmd(args []string) {
 	fs := flag.NewFlagSet("audit", flag.ExitOnError)
 	asJSON := fs.Bool("json", false, "Output JSON")
 	timeoutSec := fs.Int("timeout", 15, "Timeout in seconds")
+	failOn := addFailOnFlag(fs)
 	positional := parseFlags(fs, args)
 
 	if len(positional) < 1 {
 		fatal("URL argument required")
 	}
+	checkFailOn(*failOn)
 	targetURL := normalizeURL(positional[0])
 	res, _ := fetchTarget(*timeoutSec, targetURL)
 
@@ -103,6 +110,7 @@ func runAuditCmd(args []string) {
 		fatal("HTML audit error: %v", err)
 	}
 	schemaAudit := audit.InspectSchema(targetURL, res.Body)
+	sevs := issueSeverities(hdrAudit.Issues, htmlAudit.Issues, schemaIssues(schemaAudit))
 
 	if *asJSON {
 		outputJSON(map[string]interface{}{
@@ -110,6 +118,7 @@ func runAuditCmd(args []string) {
 			"technical": htmlAudit,
 			"schema":    schemaAudit,
 		})
+		exitIfFindings(*failOn, sevs)
 		return
 	}
 
@@ -142,29 +151,14 @@ func runAuditCmd(args []string) {
 	fmt.Printf("  Schema Types:          %s\n", strings.Join(schemaAudit.TypesFound, ", "))
 
 	fmt.Println("\nActionable Diagnostics:")
-	allIssues := append(hdrAudit.Issues, htmlAudit.Issues...)
-	for _, b := range schemaAudit.Blocks {
-		for _, e := range b.Errors {
-			allIssues = append(allIssues, audit.AuditIssue{
-				Severity: audit.SeverityCritical,
-				Category: "Schema",
-				Message:  e,
-			})
-		}
-		for _, w := range b.Warnings {
-			allIssues = append(allIssues, audit.AuditIssue{
-				Severity: audit.SeverityWarning,
-				Category: "Schema",
-				Message:  w,
-			})
-		}
-	}
+	allIssues := append(append(append([]audit.AuditIssue{}, hdrAudit.Issues...), htmlAudit.Issues...), schemaIssues(schemaAudit)...)
 
 	for _, issue := range allIssues {
 		badge := fmt.Sprintf("[%s]", issue.Severity)
 		fmt.Printf(" %-10s %-15s: %s\n", badge, issue.Category, issue.Message)
 	}
 	fmt.Println()
+	exitIfFindings(*failOn, sevs)
 }
 
 func runPageCmd(args []string) {
@@ -172,11 +166,13 @@ func runPageCmd(args []string) {
 	asJSON := fs.Bool("json", false, "Output JSON")
 	keyword := fs.String("keyword", "", "Target keyword for content analysis")
 	timeoutSec := fs.Int("timeout", 20, "Timeout in seconds")
+	failOn := addFailOnFlag(fs)
 	positional := parseFlags(fs, args)
 
 	if len(positional) < 1 {
 		fatal("URL argument required")
 	}
+	checkFailOn(*failOn)
 	targetURL := normalizeURL(positional[0])
 	res, _ := fetchTarget(*timeoutSec, targetURL)
 
@@ -199,6 +195,8 @@ func runPageCmd(args []string) {
 		fatal("hreflang audit error: %v", err)
 	}
 
+	sevs := issueSeverities(hdrAudit.Issues, htmlAudit.Issues, schemaIssues(schemaAudit),
+		imagesAudit.Issues, contentAudit.Issues, hreflangAudit.Issues)
 	pageScore := (htmlAudit.Score + schemaAudit.Score + imagesAudit.Score + contentAudit.Score) / 4
 
 	if *asJSON {
@@ -212,6 +210,7 @@ func runPageCmd(args []string) {
 			"content":    contentAudit,
 			"hreflang":   hreflangAudit,
 		})
+		exitIfFindings(*failOn, sevs)
 		return
 	}
 
@@ -238,6 +237,7 @@ func runPageCmd(args []string) {
 	printSection("Images", imagesAudit.Score, imagesAudit.Issues)
 	printSection("Content", contentAudit.Score, contentAudit.Issues)
 	printSection("Hreflang", hreflangAudit.Score, hreflangAudit.Issues)
+	exitIfFindings(*failOn, sevs)
 }
 
 func schemaIssues(r *audit.SchemaAuditReport) []audit.AuditIssue {
@@ -256,18 +256,22 @@ func schemaIssues(r *audit.SchemaAuditReport) []audit.AuditIssue {
 func runSchemaCmd(args []string) {
 	fs := flag.NewFlagSet("schema", flag.ExitOnError)
 	asJSON := fs.Bool("json", false, "Output JSON")
+	failOn := addFailOnFlag(fs)
 	positional := parseFlags(fs, args)
 
 	if len(positional) < 1 {
 		fatal("URL argument required")
 	}
+	checkFailOn(*failOn)
 	targetURL := normalizeURL(positional[0])
 	res, _ := fetchTarget(15, targetURL)
 
 	report := audit.InspectSchema(targetURL, res.Body)
+	sevs := issueSeverities(schemaIssues(report))
 
 	if *asJSON {
 		outputJSON(report)
+		exitIfFindings(*failOn, sevs)
 		return
 	}
 
@@ -285,6 +289,7 @@ func runSchemaCmd(args []string) {
 		}
 	}
 	fmt.Println()
+	exitIfFindings(*failOn, sevs)
 }
 
 func runSitemapCmd(args []string) {
@@ -295,19 +300,27 @@ func runSitemapCmd(args []string) {
 
 	fs := flag.NewFlagSet("sitemap", flag.ExitOnError)
 	asJSON := fs.Bool("json", false, "Output JSON")
-	limit := fs.Int("limit", 10, "URLs to health check")
+	limit := fs.Int("limit", 10, "URLs to sample and health check (max 100)")
+	maxSitemaps := fs.Int("max-sitemaps", 50, "Child sitemaps to fetch when following an index")
 	timeoutSec := fs.Int("timeout", 20, "Timeout in seconds")
 	positional := parseFlags(fs, args)
 
 	if len(positional) < 1 {
 		fatal("Sitemap URL required")
 	}
+	if *limit > 100 && !*asJSON {
+		fmt.Fprintln(os.Stderr, "note: --limit clamped to 100")
+	}
 	targetURL := normalizeURL(positional[0])
 	client := crawler.NewSafeClient(crawler.ClientOptions{
-		Timeout: time.Duration(*timeoutSec) * time.Second,
+		Timeout:      time.Duration(*timeoutSec) * time.Second,
+		MaxBodyBytes: 52 << 20, // sitemaps may be 50 MB uncompressed
 	})
 
-	report, err := client.InspectSitemap(context.Background(), targetURL, *limit)
+	report, err := client.InspectSitemapWithOptions(context.Background(), targetURL, crawler.SitemapOptions{
+		SampleSize:  *limit,
+		MaxChildren: *maxSitemaps,
+	})
 	if err != nil {
 		fatal("sitemap error: %v", err)
 	}
@@ -318,14 +331,39 @@ func runSitemapCmd(args []string) {
 	}
 
 	fmt.Printf("\n=== XML SITEMAP AUDIT: %s ===\n", report.SitemapURL)
+	if report.DiscoveredFrom != "" {
+		fmt.Printf("Discovered from:  %s\n", report.DiscoveredFrom)
+	}
 	fmt.Printf("Is Index Sitemap: %t\n", report.IsSitemapIndex)
 	fmt.Printf("Total URLs:       %d\n", report.TotalURLs)
+	fmt.Printf("Complete:         %s\n", yesNo(report.Complete))
 	fmt.Printf("Scan Duration:    %dms\n", report.DurationMS)
 
-	if len(report.ChildSitemaps) > 0 {
-		fmt.Printf("\nChild Sitemaps (%d):\n", len(report.ChildSitemaps))
-		for _, sm := range report.ChildSitemaps {
-			fmt.Printf("  - %s\n", sm)
+	if len(report.Children) > 0 {
+		fetched := 0
+		for _, ch := range report.Children {
+			if ch.Fetched {
+				fetched++
+			}
+		}
+		fmt.Printf("\nChild Sitemaps (%d/%d fetched):\n", fetched, len(report.Children))
+		for i, ch := range report.Children {
+			if i == 10 {
+				fmt.Printf("  … and %d more\n", len(report.Children)-10)
+				break
+			}
+			line := fmt.Sprintf("  - %s (%d URLs)", ch.Loc, ch.URLCount)
+			if ch.Error != "" {
+				line += " ! " + ch.Error
+			}
+			fmt.Println(line)
+		}
+	}
+
+	if len(report.SampleURLs) > 0 {
+		fmt.Printf("\nSample URLs (%d, spread across sitemaps):\n", len(report.SampleURLs))
+		for _, u := range report.SampleURLs {
+			fmt.Printf("  - %s\n", u.Loc)
 		}
 	}
 
@@ -339,7 +377,7 @@ func runSitemapCmd(args []string) {
 	if len(report.BlockedURLs) > 0 {
 		fmt.Printf("\nBLOCKED URLS IN SITEMAP (%d, not counted as broken):\n", len(report.BlockedURLs))
 		for _, b := range report.BlockedURLs {
-			fmt.Printf("  [401/403/429] %s\n", b)
+			fmt.Printf("  [401/403/429/503] %s\n", b)
 		}
 	}
 

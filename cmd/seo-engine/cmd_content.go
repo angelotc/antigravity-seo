@@ -12,11 +12,13 @@ func runImagesCmd(args []string) {
 	fs := flag.NewFlagSet("images", flag.ExitOnError)
 	asJSON := fs.Bool("json", false, "Output JSON")
 	timeoutSec := fs.Int("timeout", 15, "Timeout in seconds")
+	failOn := addFailOnFlag(fs)
 	positional := parseFlags(fs, args)
 
 	if len(positional) < 1 {
 		fatal("URL argument required")
 	}
+	checkFailOn(*failOn)
 	targetURL := normalizeURL(positional[0])
 	res, _ := fetchTarget(*timeoutSec, targetURL)
 
@@ -25,8 +27,11 @@ func runImagesCmd(args []string) {
 		fatal("images audit error: %v", err)
 	}
 
+	sevs := issueSeverities(report.Issues)
+
 	if *asJSON {
 		outputJSON(report)
+		exitIfFindings(*failOn, sevs)
 		return
 	}
 
@@ -52,6 +57,7 @@ func runImagesCmd(args []string) {
 		}
 	}
 	fmt.Println()
+	exitIfFindings(*failOn, sevs)
 }
 
 func runContentCmd(args []string) {
@@ -59,11 +65,13 @@ func runContentCmd(args []string) {
 	asJSON := fs.Bool("json", false, "Output JSON")
 	keyword := fs.String("keyword", "", "Target keyword for density/placement analysis")
 	timeoutSec := fs.Int("timeout", 15, "Timeout in seconds")
+	failOn := addFailOnFlag(fs)
 	positional := parseFlags(fs, args)
 
 	if len(positional) < 1 {
 		fatal("URL argument required")
 	}
+	checkFailOn(*failOn)
 	targetURL := normalizeURL(positional[0])
 	res, _ := fetchTarget(*timeoutSec, targetURL)
 
@@ -72,8 +80,11 @@ func runContentCmd(args []string) {
 		fatal("content audit error: %v", err)
 	}
 
+	sevs := issueSeverities(report.Issues)
+
 	if *asJSON {
 		outputJSON(report)
+		exitIfFindings(*failOn, sevs)
 		return
 	}
 
@@ -113,17 +124,20 @@ func runContentCmd(args []string) {
 		}
 	}
 	fmt.Println()
+	exitIfFindings(*failOn, sevs)
 }
 
 func runHreflangCmd(args []string) {
 	fs := flag.NewFlagSet("hreflang", flag.ExitOnError)
 	asJSON := fs.Bool("json", false, "Output JSON")
 	timeoutSec := fs.Int("timeout", 15, "Timeout in seconds")
+	failOn := addFailOnFlag(fs)
 	positional := parseFlags(fs, args)
 
 	if len(positional) < 1 {
 		fatal("URL argument required")
 	}
+	checkFailOn(*failOn)
 	targetURL := normalizeURL(positional[0])
 	res, _ := fetchTarget(*timeoutSec, targetURL)
 
@@ -132,8 +146,11 @@ func runHreflangCmd(args []string) {
 		fatal("hreflang audit error: %v", err)
 	}
 
+	sevs := issueSeverities(report.Issues)
+
 	if *asJSON {
 		outputJSON(report)
+		exitIfFindings(*failOn, sevs)
 		return
 	}
 
@@ -162,6 +179,7 @@ func runHreflangCmd(args []string) {
 		}
 	}
 	fmt.Println()
+	exitIfFindings(*failOn, sevs)
 }
 
 func truncateForCLI(s string, n int) string {

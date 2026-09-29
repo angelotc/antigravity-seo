@@ -13,7 +13,7 @@ Focuses strictly on technical infrastructure, crawlability, indexability, and si
    * Inspect both the HTTP `Link` header and `<link rel="canonical">` tag.
    * If both exist, they **must match identically**. A mismatch confuses Googlebot and leads to unpredictable index selection.
 
-2. **Redirect Hygiene**:
+2. **Redirect Hygiene** (run `seo-engine crawl <url> --json` to find internal links that hit redirects, 2+ hop chains, broken links, canonical targets that 404 or are noindex, and non-reciprocal hreflang across the whole site):
    * Standardize URL trailing slashes (e.g. `/products/` vs `/products`). Redirects should be single-hop `301 Moved Permanently` or `308 Permanent Redirect`.
    * Never chain redirects (e.g. `http -> https` then `non-www -> www`). Consolidate into a direct 1-hop rule at the reverse proxy (Nginx/Cloudflare).
 
